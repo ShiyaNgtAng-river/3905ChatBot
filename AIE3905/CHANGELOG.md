@@ -1,5 +1,9 @@
-# 未发布（v0.3 第 1 阶段：AstrBot 原生前台）
+# 未发布（v0.3 第 1、3 阶段：AstrBot 原生前台、长记忆）
 
+- 长记忆（第 3 阶段）：后台维护循环按“每 `memory.episode_size` 条，或空闲 `episode_idle_minutes` 分钟且不少于 `episode_min` 条”把群聊整理成话题摘要（episodes），并据此更新活跃成员的公开印象（profiles），只写在本群公开说过、做过的事。数据库迁移到 schema 3，只新增表。
+- 摘要和印象都记录来源：撤回、`/别记我`、删除事项、过期清理时，引用了被删消息的摘要连同依赖它的印象一起删除；模型调用期间来源被撤回的，丢弃这次结果。摘要失败后退避 10 分钟再试。
+- `search_group_history` 增加 `who`（按人）和 `when`（今天、上周、最近3天、10月3日等）过滤，结果附前后各 2 条原话和相关话题摘要；看不懂的时间或找不到的人会明确说明，不会猜。新增 `get_group_episodes`、`get_member_profile`。配置 `transfer_to_memory` 子 agent 后，这三个工具只交给它用。
+- 主 agent 的提示里附上已滚出上下文窗口的最近 3 个话题摘要。
 - 新增 `dialogue.frontend`（默认 `astrbot`）：配置群里 @ 的自然语言交给 AstrBot 主 agent 回答，可以使用宿主的人设、分段回复、子 agent 和联网搜索；每条消息仍然只回一次。`/问`、`/记事` 等命令照旧由插件严格处理。设为 `plugin` 可回退到 v0.2 自有对话。
 - 插件在 `on_llm_request` 用自己的群记录替换宿主会话历史：最近 `context_messages`（默认 40）条群聊，包含 bot 之前的回复，以及当前发言人的引用和草案。撤回、退出记录和过期的内容不会再经由宿主历史进入模型。
 - 新增宿主工具 `search_group_history`、`read_group_items`、`save_group_drafts`、`submit_group_events`。群和身份取自事件，模型无法指定，写入仍走原有校验。这些工具只在配置群的 @ 轮次提供；配置了 `transfer_to_search`／`transfer_to_memory` 子 agent 时，对应工具从主 agent 移除。

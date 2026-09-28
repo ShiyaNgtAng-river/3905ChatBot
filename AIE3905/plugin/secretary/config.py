@@ -45,6 +45,26 @@ class Config:
             or not 0 <= self.context_messages <= 200
         ):
             raise ValueError("dialogue.context_messages 必须是0–200的整数")
+        # Long-range memory: topic episodes are summarised every episode_size
+        # messages, or after episode_idle_minutes of quiet with at least episode_min.
+        memory = data.get("memory", {})
+        self.episodes = memory.get("episodes", True)
+        self.profiles = memory.get("profiles", True)
+        self.episode_size = memory.get("episode_size", 30)
+        self.episode_min = memory.get("episode_min", 5)
+        self.episode_idle = memory.get("episode_idle_minutes", 20)
+        if (
+            not isinstance(self.episodes, bool)
+            or not isinstance(self.profiles, bool)
+            or type(self.episode_size) is not int
+            or type(self.episode_min) is not int
+            or not isinstance(self.episode_idle, (int, float))
+            or not 1 <= self.episode_min <= self.episode_size <= 200
+            or not 0 <= self.episode_idle <= 1440
+        ):
+            raise ValueError(
+                "memory 配置无效：episode_min≤episode_size≤200，空闲分钟为0–1440"
+            )
         self.models = data.get("models", {})
         self.web = data.get("web", {})
         self.max_attempts = int(data.get("max_attempts", 3))

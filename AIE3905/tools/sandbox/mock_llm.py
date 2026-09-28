@@ -53,6 +53,9 @@ def host_agent(system, msgs, user):
             return '没办成：' + json.loads(result).get('error', ''), None
         if '"operations"' in result:
             return '好，定了。', None
+        if '"messages"' not in result and '"summary"' in result:
+            summaries = re.findall(r'"summary": ?"([^"]+)"', result)
+            return '今天主要聊了：' + summaries[0], None
         if '"drafts"' in result:
             return '**方案1**：评审后周五晚上七点，先作为建议。\n希望对你有帮助！', None
         found = re.findall(r'"text": ?"([^"]+)"', result)
@@ -64,6 +67,8 @@ def host_agent(system, msgs, user):
     if '就按' in user:
         ids = re.findall(r'id=([0-9a-f]{24})', system)
         return None, ('submit_group_events', {'events': [{'kind': 'confirm', 'draft_id': ids[0] if ids else 'none'}]})
+    if '聊了什么' in user:
+        return None, ('get_group_episodes', {'when': '今天'})
     if '之前' in user or '谁说' in user:
         return None, ('search_group_history', {'query': '中午 吃什么'})
     return '**收到**，评审是老张负责。', None
@@ -83,6 +88,15 @@ async def chat(request):
                 f.write(json.dumps({'t': time.time(), 'kind': kind, 'failed': True}) + '\n')
             return web.json_response({'error': {'message': 'simulated outage'}}, status=503)
         content = json.dumps({'events': extract(json.loads(user))}, ensure_ascii=False)
+    elif '你负责把一段群聊整理成话题摘要' in system:
+        kind = 'plugin_episode'
+        first = json.loads(user)['messages'][0]['text']
+        content = json.dumps({'summary': '沙盒话题：' + first[:12], 'topics': ['沙盒']}, ensure_ascii=False)
+    elif '你负责维护群成员的简短印象卡' in system:
+        kind = 'plugin_profile'
+        members = json.loads(user)['members']
+        content = json.dumps({'profiles': [{'sender': m['sender'], 'summary': m['name'] + '在沙盒群发言'}
+                                           for m in members]}, ensure_ascii=False)
     elif '你负责选择与问题相关的事实条目' in system:
         kind = 'plugin_answer'
         claims = json.loads(user)['claims']

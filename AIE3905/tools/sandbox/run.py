@@ -179,7 +179,9 @@ class Sandbox:
                            'proactive': False, 'report_time': '', 'platform_id': 'sandbox-qq', 'native_group_id': str(GROUP)}],
                'web': {'enabled': False},
                'models': {'understanding': {'provider_id': 'sandbox-model'}, 'answering': {'provider_id': 'sandbox-model'}},
-               'dialogue': {'frontend': self.args.frontend}}
+               'dialogue': {'frontend': self.args.frontend},
+               # Small, idle-free episodes so the maintenance loop summarises during the run.
+               'memory': {'episode_size': 10, 'episode_min': 3, 'episode_idle_minutes': 0}}
         (self.pdata / 'config.json').write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
 
     def start_mock(self):
@@ -541,6 +543,17 @@ async def native_checks(sb, ask, first_reply, t0):
     s = sb.item('周会')
     sb.check(S, '非确认人自然确认 → 只进入待确认', len(out) == 1 and '等确认人确认' in out[0]['text']
              and s and s['status'] != 'confirmed', out[0]['text'][:80] if out else 'no reply')
+
+    # Maintenance runs every 30 s; with the sandbox memory settings an episode is due.
+    end = time.time() + 75
+    while time.time() < end and not sb.count('SELECT COUNT(*) FROM episodes'):
+        await asyncio.sleep(1)
+    episodes, profiles = sb.count('SELECT COUNT(*) FROM episodes'), sb.count('SELECT COUNT(*) FROM profiles')
+    sb.check(S, '后台维护生成话题摘要与成员印象', episodes >= 1 and profiles >= 1,
+             f'episodes={episodes} profiles={profiles}')
+    out = await ask(OWNER, '最近群里聊了什么', at=True)
+    sb.check(S, '宿主 agent 调用 get_group_episodes 取到话题摘要', len(out) == 1 and '沙盒话题' in out[0]['text'],
+             out[0]['text'][:80] if out else 'no reply')
 
 
 def inner(args):

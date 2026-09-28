@@ -16,6 +16,8 @@ from .secretary.web import AuditServer
 STATE_KEY = "groupsecretary_turn"
 GROUP_TOOLS = {
     "search_group_history",
+    "get_group_episodes",
+    "get_member_profile",
     "read_group_items",
     "save_group_drafts",
     "submit_group_events",
@@ -28,7 +30,11 @@ DELEGATED = {
         "firecrawl_extract_web_page",
         "exa_get_contents",
     ),
-    "transfer_to_memory": ("search_group_history",),
+    "transfer_to_memory": (
+        "search_group_history",
+        "get_group_episodes",
+        "get_member_profile",
+    ),
 }
 
 
@@ -331,13 +337,43 @@ class GroupSecretary(Star):
         )
 
     @filter.llm_tool(name="search_group_history")
-    async def search_group_history(self, event: AstrMessageEvent, query: str):
-        """在本群保存的聊天记录里查以前的原话。适合“之前谁说过”“上次怎么说的”这类问题；原话不代表最终决定。
+    async def search_group_history(
+        self, event: AstrMessageEvent, query: str = "", who: str = "", when: str = ""
+    ):
+        """在本群保存的聊天记录里查以前的原话，附前后文和相关话题摘要。适合“之前谁说过”“上周怎么定的”；原话不代表最终决定。三个参数至少填一个。
 
         Args:
-            query(string): 要查的关键词，多个词用空格分开
+            query(string): 关键词，多个词用空格分开
+            who(string): 可选，只看某个成员的发言（名字）
+            when(string): 可选，时间范围，如 今天、昨天、上周、这个月、最近3天、10月3日
         """
-        return self._group_tool(event, "search_messages", {"query": query})
+        return self._group_tool(
+            event, "search_history", {"query": query, "who": who, "when": when}
+        )
+
+    @filter.llm_tool(name="get_group_episodes")
+    async def get_group_episodes(
+        self, event: AstrMessageEvent, query: str = "", who: str = "", when: str = ""
+    ):
+        """查看本群按话题整理的聊天摘要，适合“最近群里聊了什么”“上周发生了什么”。
+
+        Args:
+            query(string): 可选，话题关键词
+            who(string): 可选，只看某个成员参与的话题
+            when(string): 可选，时间范围，如 今天、上周、最近7天
+        """
+        return self._group_tool(
+            event, "episodes", {"query": query, "who": who, "when": when}
+        )
+
+    @filter.llm_tool(name="get_member_profile")
+    async def get_member_profile(self, event: AstrMessageEvent, who: str):
+        """查看某个群成员在本群的公开印象：称呼、分工、偏好、发言数和最近活跃时间。
+
+        Args:
+            who(string): 成员名字
+        """
+        return self._group_tool(event, "profile", {"who": who})
 
     @filter.llm_tool(name="read_group_items")
     async def read_group_items(self, event: AstrMessageEvent, query: str = ""):

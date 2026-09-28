@@ -8,6 +8,13 @@
     "frontend": "astrbot",
     "context_messages": 40
   },
+  "memory": {
+    "episodes": true,
+    "profiles": true,
+    "episode_size": 30,
+    "episode_min": 5,
+    "episode_idle_minutes": 20
+  },
   "groups": [
     {
       "key": "qq-pilot",

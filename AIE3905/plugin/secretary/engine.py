@@ -13,6 +13,7 @@ from .dialogue import Dialogue
 from .extract import Extractor
 from .memory import project, rank, validate_candidates
 from .providers import AstrBotProvider, OpenAICompatible
+from .recall import Recall
 from .store import Store, encode
 from .types import Actor, Message, utcnow
 
@@ -72,6 +73,7 @@ class Engine:
         self.started = False
         self.writer_file = None
         self.conversation = Dialogue(self)
+        self.recall = Recall(self)
 
     def _lock_writer(self):
         self.writer_file = open(str(self.config.db) + ".writer.lock", "a+b")
@@ -595,12 +597,32 @@ class Engine:
                     self.store.set_meta("send_error:" + g.key, "reminder_failed")
                 break
 
+    async def _build_memory(self, key):
+        """Summarise at most one due episode; back off for 10 minutes after a failure."""
+        retry = self.store.get_meta("episode_retry:" + key)
+        if retry and retry > utcnow():
+            return
+        try:
+            await self.recall.build(key)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Payloads are never copied into error logs.
+            self.store.log_usage(
+                key, "episode_failure", "runtime", {}, 0, type(exc).__name__
+            )
+            self.store.set_meta(
+                "episode_retry:" + key,
+                (datetime.now(ZoneInfo("UTC")) + timedelta(minutes=10)).isoformat(),
+            )
+
     async def _maintenance(self):
         while True:
             for key, g in self.config.groups.items():
                 if not (g.enabled and g.data_use_confirmed):
                     continue
                 self.store.expire(key, g.retention_days)
+                await self._build_memory(key)
                 now = datetime.now(ZoneInfo(g.timezone))
                 marker = now.date().isoformat()
                 if (

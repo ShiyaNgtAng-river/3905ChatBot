@@ -86,6 +86,19 @@ class Store:
           message_uid TEXT PRIMARY KEY, group_key TEXT, actor TEXT, result TEXT, at TEXT);
         PRAGMA user_version=2;
         """)
+        # v3: derived long-range memory. Every row lists the message uids it was
+        # generated from, so removing any source removes the derived text too.
+        self.conn.executescript("""
+        CREATE TABLE IF NOT EXISTS episodes(
+          id TEXT PRIMARY KEY, group_key TEXT, start_seq INTEGER, end_seq INTEGER,
+          start_at TEXT, end_at TEXT, participants TEXT, summary TEXT, topics TEXT,
+          sources TEXT, at TEXT);
+        CREATE INDEX IF NOT EXISTS episode_group ON episodes(group_key,end_seq);
+        CREATE TABLE IF NOT EXISTS profiles(
+          group_key TEXT, sender TEXT, name TEXT, summary TEXT, episodes TEXT,
+          updated_at TEXT, PRIMARY KEY(group_key,sender));
+        PRAGMA user_version=3;
+        """)
         self.fts = True
         try:
             existing = self.one("SELECT 1 FROM sqlite_master WHERE name='message_fts'")
@@ -258,25 +271,65 @@ class Store:
             r["provenance"] = json.loads(r.get("provenance") or "{}")
         return rows
 
-    def search(self, group, query, before=None, limit=12, exclude_uid=""):
+    def search(
+        self,
+        group,
+        query,
+        before=None,
+        limit=12,
+        exclude_uid="",
+        since=None,
+        senders=None,
+    ):
+        """Find messages by words, optionally within a time range and by senders.
+
+        Args:
+            group: Group key.
+            query: Words to match; when empty, filters alone select the newest rows.
+            before: Upper time bound (inclusive), defaults to now.
+            limit: Maximum rows, 1–100.
+            exclude_uid: Message to leave out, usually the current request.
+            since: Lower time bound (inclusive), or None.
+            senders: Sender ids to keep, or None for everyone.
+
+        Returns:
+            Message rows, best match first; newest first when query is empty.
+        """
         tokens = sorted(terms(query))[:64]
-        if not tokens:
-            return []
         limit = max(1, min(int(limit), 100))
+        extra, args = "", []
+        if since:
+            extra += " AND m.at>=?"
+            args.append(since)
+        if senders is not None:
+            if not senders:
+                return []
+            extra += f" AND m.sender IN ({','.join('?' for _ in senders)})"
+            args += list(senders)
+        base = [group, before or utcnow(), exclude_uid]
+        if not tokens:
+            if not since and senders is None:
+                return []
+            return self.rows(
+                f"""SELECT m.* FROM messages m WHERE m.group_key=? AND m.erased=0 AND m.kind!='recall'
+                AND m.at<=? AND m.uid!=?{extra} ORDER BY m.seq DESC LIMIT ?""",
+                [*base, *args, limit],
+            )
         if self.fts:
             match = " OR ".join(
                 '"' + token.replace('"', '""') + '"' for token in tokens
             )
             return self.rows(
-                """SELECT m.* FROM message_fts JOIN messages m ON m.uid=message_fts.uid
+                f"""SELECT m.* FROM message_fts JOIN messages m ON m.uid=message_fts.uid
                 WHERE message_fts MATCH ? AND m.group_key=? AND m.erased=0 AND m.kind!='recall'
-                AND m.at<=? AND m.uid!=? ORDER BY bm25(message_fts),m.at DESC LIMIT ?""",
-                (match, group, before or utcnow(), exclude_uid, limit),
+                AND m.at<=? AND m.uid!=?{extra} ORDER BY bm25(message_fts),m.at DESC LIMIT ?""",
+                [match, *base, *args, limit],
             )
-        clauses = " OR ".join("instr(lower(text),?)>0" for _ in tokens)
+        clauses = " OR ".join("instr(lower(m.text),?)>0" for _ in tokens)
         return self.rows(
-            f"SELECT * FROM messages WHERE group_key=? AND erased=0 AND kind!='recall' AND at<=? AND uid!=? AND ({clauses}) ORDER BY at DESC LIMIT ?",
-            [group, before or utcnow(), exclude_uid, *tokens, limit],
+            f"""SELECT m.* FROM messages m WHERE m.group_key=? AND m.erased=0 AND m.kind!='recall'
+            AND m.at<=? AND m.uid!=?{extra} AND ({clauses}) ORDER BY m.at DESC LIMIT ?""",
+            [*base, *args, *tokens, limit],
         )
 
     def drafts(self, group, actor=None, before=None):
@@ -407,6 +460,24 @@ class Store:
                     "UPDATE events SET valid=0,payload='{}',provenance='{}',actor='',reason='evidence_removed' WHERE id=?",
                     (e["id"],),
                 )
+        # Episodes summarise their sources; member notes are rebuilt from episodes.
+        gone = {
+            r["id"]
+            for r in self.rows(
+                "SELECT id,sources FROM episodes WHERE group_key=?", (group,)
+            )
+            if ids.intersection(json.loads(r["sources"]))
+        }
+        for eid in gone:
+            db.execute("DELETE FROM episodes WHERE id=?", (eid,))
+        for p in self.rows(
+            "SELECT sender,episodes FROM profiles WHERE group_key=?", (group,)
+        ):
+            if gone.intersection(json.loads(p["episodes"])):
+                db.execute(
+                    "DELETE FROM profiles WHERE group_key=? AND sender=?",
+                    (group, p["sender"]),
+                )
         # Remove generated text conservatively: it may paraphrase removed evidence.
         db.execute("DELETE FROM answers WHERE group_key=?", (group,))
         db.execute("DELETE FROM feedback WHERE group_key=?", (group,))
@@ -467,6 +538,10 @@ class Store:
                     )
                 ]
                 self._purge(db, group, ids, sender, "opt_out")
+                db.execute(
+                    "DELETE FROM profiles WHERE group_key=? AND sender=?",
+                    (group, sender),
+                )
 
     def forget(self, group, item_id, actor):
         with self.tx() as db:
@@ -507,6 +582,13 @@ class Store:
             )
             db.execute(
                 "DELETE FROM answers WHERE group_key=? AND at<?", (group, cutoff)
+            )
+            db.execute(
+                "DELETE FROM episodes WHERE group_key=? AND end_at<?", (group, cutoff)
+            )
+            db.execute(
+                "DELETE FROM profiles WHERE group_key=? AND updated_at<?",
+                (group, cutoff),
             )
         return len(ids)
 
