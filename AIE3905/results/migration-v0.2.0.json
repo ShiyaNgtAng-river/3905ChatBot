@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "copied_database": "existing pilot, temporary copy only",
+  "preserved_tables": [
+    "messages",
+    "events",
+    "items",
+    "answers"
+  ],
+  "schema_version": 2
+}

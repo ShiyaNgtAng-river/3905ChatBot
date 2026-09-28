@@ -1,10 +1,12 @@
-# AIE3905 GroupBot v0.1.1
+# AIE3905 GroupBot v0.2.1
 
 2026-09-28 · Mac 学习与集成验证版
 
-本版以 `AIE3905_GroupBot_v0.1.0.zip` 为主线，加入 DeepSeek／Qwen 参数兼容、Mac 启动入口、可复现噪音数据生成与评测。真实 LLM、AstrBot 宿主和 QQ 群尚未联调；已知的事项更正与时间解析缺陷仍然存在。
+v0.2.1 修复插件与宿主同时回复的问题，并调整对话身份与表达。见 [本次修复记录](docs/修复记录_v0.2.1.md)。
 
-先读 [总结交付文档](docs/总结交付文档_v0.1.1.md)，按 [Mac 上手与接入教程](docs/Mac上手与接入教程.md) 操作。接口和评测细节见 [接口与模拟测试](docs/接口与模拟测试.md)。
+本版增加自然对话、方案草案与授权自然确认；严格校验集中于正式事项、权限和来源。保留 Mac 启动、DeepSeek／Qwen 接入和模拟回放。已通过离线回归及真实 DeepSeek 小样本；已升级本机 AstrBot，新版 QQ 对话仍需群内人工验收。
+
+先读 [总结交付文档](docs/总结交付文档_v0.2.0.md)，按 [Mac 上手与接入教程](docs/Mac上手与接入教程.md) 操作。接口和评测细节见 [接口与模拟测试](docs/接口与模拟测试.md)。
 
 ## 五分钟本地练习
 
@@ -46,7 +48,7 @@ chmod +x run
 
 | 路径 | 用途 |
 | --- | --- |
-| `plugin/` | 可装入 AstrBot 的插件源码；元数据版本 v0.1.1 |
+| `plugin/` | 可装入 AstrBot 的插件源码；元数据版本 v0.2.1 |
 | `lab.py`、`run` | 独立学习、模拟回放入口 |
 | `config/` | 规则、DeepSeek、Qwen、QQ 的配置与模板；不含 Key |
 | `datasets/` | 完全虚构的消息、独立答案断言和生成参数 |
@@ -55,4 +57,4 @@ chmod +x run
 | `tools/build_release.py` | 重建完整交付 ZIP、独立插件 ZIP、校验清单 |
 | `SOURCE.json` | 原包 SHA-256 与改动范围 |
 
-两个 ZIP 用途不同：完整交付包用于阅读、开发和测试；`astrbot_plugin_groupsecretary_v0.1.1.zip` 用于 AstrBot 的插件文件安装。不要把完整交付包当成插件上传。
+两个 ZIP 用途不同：完整交付包用于阅读、开发和测试；`astrbot_plugin_groupsecretary_v0.2.1.zip` 用于 AstrBot 的插件文件安装。不要把完整交付包当成插件上传。

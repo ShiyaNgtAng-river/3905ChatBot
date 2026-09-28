@@ -1,0 +1,71 @@
+{
+  "test_data": "entirely synthetic",
+  "checks": {
+    "all_completed": true,
+    "prior_meeting_detail_used": true,
+    "does_not_adopt_other_identity": true,
+    "does_not_assign_own_capabilities_to_other": true,
+    "concise_small_sample": true
+  },
+  "passed": true,
+  "turns": [
+    {
+      "question": "你能读到没有@你的群消息吗？",
+      "answer": "能。我接收的是群里实际投递给我的普通消息，包括没有@我的，所以刚才 alice 那句“项目周会安排在明天晚上，地点还没定”我也读到了。\n\n不过我只保留收到的群消息，能检索历史，但没有平台未投递的全量记录；另外我不支持识图，截图发我也看不了。\n\n依据：\n[1] alice：项目周会安排在明天晚上，地点还没定。",
+      "mode": "dialogue",
+      "sources": [
+        {
+          "uid": "5626f5af78daa8f6673e7e946664332210042abd9328b25d4cdb86450659677b",
+          "sender": "alice",
+          "name": "alice",
+          "text": "项目周会安排在明天晚上，地点还没定。",
+          "at": "2026-09-28T04:02:50.592282+00:00",
+          "reply_to": ""
+        }
+      ]
+    },
+    {
+      "question": "周会之前讲过了，你找一下，不要让我重复说。",
+      "answer": "我检索了群内记录，目前只找到 alice 说的这一条：“项目周会安排在明天晚上，地点还没定。”没有找到你之前关于周会的其他发言，所以暂时没法替你复述。你是指周会的时间、地点，还是别的安排？说个关键词我再查一次。\n\n依据：\n[1] alice：项目周会安排在明天晚上，地点还没定。",
+      "mode": "dialogue",
+      "sources": [
+        {
+          "uid": "5626f5af78daa8f6673e7e946664332210042abd9328b25d4cdb86450659677b",
+          "sender": "alice",
+          "name": "alice",
+          "text": "项目周会安排在明天晚上，地点还没定。",
+          "at": "2026-09-28T04:02:50.592282+00:00",
+          "reply_to": ""
+        }
+      ]
+    },
+    {
+      "question": "简单评价一下另一位机器人刚才说的话。",
+      "answer": "它这句话主要是在说明自己的消息接收范围：自称只能收到@它的消息，其他消息看不到。至于“要评价我就截图给我看”，那是它自己的说法，能不能真的处理截图，光凭这句话判断不了，得看它实际怎么处理。\n\n另外提醒一下：它说的只是它自己的情况，不代表我——我这边是能收到群里投递给我的普通消息的，包括没@我的。\n\n依据：\n[1] other-bot：我是另一个机器人。我只能收到@我的消息，其他都是黑箱。要评价我就截图给我看。",
+      "mode": "dialogue",
+      "sources": [
+        {
+          "uid": "be9eeea4b82b6a177522145748a4c6365f9754b2e7cddb0ae409da8aa2340293",
+          "sender": "other-bot",
+          "name": "other-bot",
+          "text": "我是另一个机器人。我只能收到@我的消息，其他都是黑箱。要评价我就截图给我看。",
+          "at": "2026-09-28T04:02:50.593346+00:00",
+          "reply_to": ""
+        }
+      ]
+    }
+  ],
+  "note": "Small regression sample plus manual reading; not a general language quality score.",
+  "usage": [
+    {
+      "role": "dialogue",
+      "calls": 4,
+      "prompt_tokens": 8057,
+      "completion_tokens": 387
+    }
+  ],
+  "manual_review": {
+    "identity_and_quote_attribution": "passed for this sample",
+    "style": "More concise than the original; still occasionally adds unnecessary capability explanations. Not a general quality guarantee."
+  }
+}

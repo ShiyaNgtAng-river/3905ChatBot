@@ -9,3 +9,4 @@ data/
 .env.*
 config/qq.json
 dist/
+.sandbox/
