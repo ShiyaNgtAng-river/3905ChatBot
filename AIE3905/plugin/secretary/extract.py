@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta
 
 from .providers import json_object
 from .timeparse import normalize_time
@@ -50,6 +51,62 @@ scope 是 series 或 occurrence；“这次/这周”只影响 occurrence，必�
 事件提供 draft_id 和 kind=confirm，字段由程序从草案读取；请求设计、比较、修改方案或询问不是正式确认。
 “就这样”只能在可用草案唯一时关联；多个选项而未说明选择则输出空列表。
 最多6个事件，禁止输出解释性文字。"""
+
+
+# The gate: only messages that may carry a formal event reach the model. Schedule,
+# decision and assignment words, times and dates, replies to recorded messages,
+# or a short confirmation while something awaits one. The day reading pass still
+# reads everything else.
+EVENTFUL = re.compile(
+    r"定|改|换到|取消|推迟|延期|延后|提前|确认|安排|计划|负责|分工|交给|我来|报名|参加|缺席|"
+    r"请假|来不了|去不了|到不了|不来了|不去了|开会|会议|集合|碰头|见面|截止|提交|上交|"
+    r"deadline|ddl|预约|预订|订|发布|上线|时间|几点|地点|在哪|哪里|今天|明天|后天|今晚|"
+    r"明晚|早上|上午|中午|下午|晚上|周[一二三四五六日天末]|星期|礼拜|下周|这周|本周|月底|"
+    r"\d{1,2}[:：点]|[一二三四五六七八九十两]{1,3}点|\d{1,2}[月号日]|[一二三四五六七八九十]{1,3}[月号日]|"
+    r"记住|过时|采用|方案",
+    re.I,
+)
+CONFIRM = re.compile(
+    r"(那就|那|就)?(可以|行|好的?|好滴|ok|同意|没问题|这样|这么定|按这个来?|收到|嗯嗯?|对|确定)"
+    r"(吧|了|啦)?[!！。.~～]*",
+    re.I,
+)
+
+
+def worth_extracting(m, reply, known, states, store, group) -> bool:
+    """Decide whether a message may carry a formal event (see EVENTFUL).
+
+    Args:
+        m: Stored message row.
+        reply: The stored message it quotes, or None.
+        known: Valid events before the message.
+        states: Current item states.
+        store: Store, for recent drafts.
+        group: Group settings.
+
+    Returns:
+        True when the understanding model should read the message.
+    """
+    text = (m["text"] or "").strip()
+    if not text:
+        return False
+    if EVENTFUL.search(text):
+        return True
+    if reply and any(e["message_uid"] == reply["uid"] for e in known):
+        return True
+    # Anything may adopt a plan the assistant just drafted for this member, or quote one.
+    own = store.drafts(group.key, m["sender"], m["at"])
+    day_ago = (datetime.fromisoformat(m["at"]) - timedelta(days=1)).isoformat()
+    if own and own[0]["at"] >= day_ago:
+        return True
+    if m["reply_to"] and store.one(
+        "SELECT 1 FROM drafts WHERE group_key=? AND (id=? OR answer_id=?)",
+        (group.key, m["reply_to"], m["reply_to"]),
+    ):
+        return True
+    return bool(CONFIRM.fullmatch(text)) and bool(
+        m["reply_to"] or any(s["pending"] for s in states)
+    )
 
 
 def explicit_event(text: str, m: dict, group, known: list[dict]) -> list | None:
@@ -110,6 +167,8 @@ def explicit_event(text: str, m: dict, group, known: list[dict]) -> list | None:
 
 
 class Extractor:
+    gate = False  # set from memory.gate by the engine
+
     def __init__(self, provider=None):
         self.provider = provider
         self.model = provider.model if provider else "demo-rules"
@@ -193,6 +252,8 @@ class Extractor:
             return [], "unparsed_attachment" if m[
                 "attachments"
             ] != "[]" else "unstructured"
+        if self.gate and not worth_extracting(m, reply, known, states, store, group):
+            return [], "gated"
         recent = store.recent(group.key, m["at"], group.recent_limit)
 
         def clean(row):

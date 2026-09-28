@@ -106,6 +106,7 @@ class Recall:
     def __init__(self, engine):
         self.e = engine
         self.store = engine.store
+        self.provider = None  # overrides the understanding model, e.g. for evaluation
 
     def due(self, key, now=None):
         """Return the next span of messages to summarise, or [] when none is due.
@@ -159,7 +160,9 @@ class Recall:
             return None
         tz = ZoneInfo(self.e.config.group(key).timezone)
         revision = self.store.get_meta("revocation:" + key)
-        provider = self.e.extractor.provider
+        provider = (
+            self.provider if self.provider is not None else self.e.extractor.provider
+        )
         names = {}
         for r in rows:
             names.setdefault(r["sender"], r["name"] or r["sender"])
@@ -252,7 +255,7 @@ class Recall:
                     )
                     episodes = (json.loads(old["episodes"]) if old else []) + [eid]
                     db.execute(
-                        "INSERT OR REPLACE INTO profiles VALUES(?,?,?,?,?,?)",
+                        "INSERT OR REPLACE INTO profiles(group_key,sender,name,summary,episodes,updated_at) VALUES(?,?,?,?,?,?)",
                         (key, sender, names[sender], note, encode(episodes), utcnow()),
                     )
         return eid

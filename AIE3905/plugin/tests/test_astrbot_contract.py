@@ -313,6 +313,27 @@ class NativeFrontendTests(PluginHarness):
         refused = await self.plugin.search_group_history(outside, "新闻")
         self.assertIn("不能使用", refused)
 
+    async def test_memory_tools_belong_to_the_memory_subagent(self):
+        ev = await self.mention("上周团建怎么定的", "m1")
+        req = Request(
+            [
+                "transfer_to_memory",
+                "get_topic_timeline",
+                "read_group_day",
+                "get_group_episodes",
+                "read_group_items",
+            ]
+        )
+        await self.plugin.inject_group_context(ev, req)
+        self.assertEqual(req.func_tool.names(), ["transfer_to_memory", "read_group_items"])
+        timeline = json.loads(await self.plugin.get_topic_timeline(ev, "团建"))
+        self.assertIn("notes", timeline)
+        # Demo mode has no model to reread a day with; the agent gets an error it can use.
+        reread = json.loads(await self.plugin.read_group_day(ev, "昨天", "几点集合"))
+        self.assertIn("error", reread)
+        outside = Event("hi", group="other", wake=True)
+        self.assertIn("不能使用", await self.plugin.read_group_day(outside, "昨天", "几点"))
+
     async def test_draft_then_authorized_confirm_records_with_receipt(self):
         ev = await self.mention("帮我设计团建方案", "d1")
         saved = json.loads(
@@ -451,3 +472,30 @@ class NativeFrontendTests(PluginHarness):
         daily = await self.mention("今天吃什么", "k2")
         req, _ = await self.turn(daily, "随便。")
         self.assertNotIn("当前消息里有", req.system_prompt)
+
+    async def test_service_phrases_are_trimmed_and_counted_not_hidden(self):
+        from contract_plugin.secretary.dialogue import tidy_reply
+
+        flags = []
+        self.assertEqual(
+            tidy_reply("抱歉，这个画不了啦。你发张图给我看看？", flags),
+            "这个画不了啦。你发张图给我看看？",
+        )
+        self.assertEqual(flags, ["apology"])
+        flags = []
+        kept = "我这边只能打字和查资料，没有画图的能力。想换头像就发张图来。"
+        self.assertEqual(tidy_reply(kept, flags), kept)
+        self.assertEqual(flags, ["capability_note"])
+        honest = "我是 AI 扮演的爱音哦，不是真人～"
+        self.assertEqual(tidy_reply(honest), honest)
+        self.assertEqual(tidy_reply("抱歉。"), "抱歉。")
+        flags = []
+        tidy_reply("好的！如有需要随时找我～", flags)
+        self.assertEqual(flags, ["canned_tail"])
+        ev = await self.mention("给我画张图", "s1")
+        _, text = await self.turn(ev, "抱歉，我这边只能打字，画不了。你发图来吧！")
+        self.assertEqual(text, "我这边只能打字，画不了。你发图来吧！")
+        trace = json.loads(
+            self.plugin.engine.store.one("SELECT trace FROM answers")["trace"]
+        )
+        self.assertEqual(trace["style_flags"], {"apology": 1, "capability_note": 1})

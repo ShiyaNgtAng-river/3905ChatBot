@@ -13,6 +13,7 @@ from .dialogue import Dialogue
 from .extract import Extractor
 from .memory import project, rank, validate_candidates
 from .providers import AstrBotProvider, OpenAICompatible
+from .reading import Reader
 from .recall import Recall
 from .store import Store, encode
 from .types import Actor, Message, utcnow
@@ -62,6 +63,7 @@ class Engine:
         self.extractor = Extractor(
             understanding if understanding is not None else provider("understanding")
         )
+        self.extractor.gate = config.gate
         self.answerer = Answerer(
             answering if answering is not None else provider("answering")
         )
@@ -74,6 +76,7 @@ class Engine:
         self.writer_file = None
         self.conversation = Dialogue(self)
         self.recall = Recall(self)
+        self.reader = Reader(self, provider("reading"), provider("consolidating"))
 
     def _lock_writer(self):
         self.writer_file = open(str(self.config.db) + ".writer.lock", "a+b")
@@ -113,6 +116,10 @@ class Engine:
             self.tasks.append(
                 asyncio.create_task(self._maintenance(), name="secretary:maintenance")
             )
+            if self.config.reading:
+                self.tasks.append(
+                    asyncio.create_task(self._memory_loop(), name="secretary:memory")
+                )
 
     async def close(self):
         for task in self.tasks:
@@ -216,6 +223,7 @@ class Engine:
             "counts": counts,
             "usage": usage,
             "items": len(self.states(key)),
+            "memory": self.reader.stats(key),
             "proactive": g.proactive,
             "retention_days": g.retention_days,
         }
@@ -352,7 +360,7 @@ class Engine:
             mode = "raw_keyword_fallback"
         output = render(opening, claims, sources, g.timezone)
         gaps = self.store.one(
-            "SELECT COUNT(*) AS n FROM messages WHERE group_key=? AND at<=? AND erased=0 AND status IN ('failed','pending','retry','dialogue','unparsed_attachment','unstructured')",
+            "SELECT COUNT(*) AS n FROM messages WHERE group_key=? AND at<=? AND erased=0 AND status IN ('failed','pending','retry','dialogue','unparsed_attachment','unstructured','gated')",
             (key, before),
         )["n"]
         if not ready or gaps:
@@ -615,6 +623,46 @@ class Engine:
                 "episode_retry:" + key,
                 (datetime.now(ZoneInfo("UTC")) + timedelta(minutes=10)).isoformat(),
             )
+
+    async def _background(self, key, name, job):
+        """Run one memory job; after a failure the job backs off for 10 minutes.
+
+        Returns:
+            True when the job did some work.
+        """
+        retry = self.store.get_meta(name + "_retry:" + key)
+        if retry and retry > utcnow():
+            return False
+        try:
+            return bool(await job(key))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Payloads are never copied into error logs.
+            self.store.log_usage(
+                key, name + "_failure", "runtime", {}, 0, type(exc).__name__
+            )
+            self.store.set_meta(
+                name + "_retry:" + key,
+                (datetime.now(ZoneInfo("UTC")) + timedelta(minutes=10)).isoformat(),
+            )
+            return False
+
+    async def _memory_loop(self):
+        """Read, consolidate and roll up each group's chat; one model job per tick."""
+        await asyncio.sleep(self.config.start_delay)
+        while True:
+            for key, g in self.config.groups.items():
+                if not (g.enabled and g.data_use_confirmed):
+                    continue
+                for name, job in (
+                    ("read", self.reader.read),
+                    ("consolidate", self.reader.consolidate),
+                    ("rollup", self.reader.rollup),
+                ):
+                    if await self._background(key, name, job):
+                        break
+            await asyncio.sleep(30)
 
     async def _maintenance(self):
         # Host model providers finish loading after plugins start; wait before summarising.

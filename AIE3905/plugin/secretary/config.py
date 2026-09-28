@@ -51,10 +51,63 @@ class Config:
             or not 0 <= self.context_messages <= 200
         ):
             raise ValueError("dialogue.context_messages 必须是0–200的整数")
-        # Long-range memory: topic episodes are summarised every episode_size
-        # messages, or after episode_idle_minutes of quiet with at least episode_min.
         memory = data.get("memory", {})
-        self.episodes = memory.get("episodes", True)
+        # v2 memory: read each whole day in adaptive passes (a pass runs after
+        # read_new_chars of new text, or read_idle_minutes with anything new, never
+        # more often than read_min_minutes), then consolidate every finished day
+        # into anchors and digests after consolidate_time the next morning.
+        self.reading = memory.get("reading", True)
+        self.read_new_chars = memory.get("read_new_chars", 6000)
+        self.read_idle_minutes = memory.get("read_idle_minutes", 60)
+        self.read_min_minutes = memory.get("read_min_minutes", 10)
+        self.read_max_chars = memory.get("read_max_chars", 250000)
+        self.consolidate_time = memory.get("consolidate_time", "04:00")
+        self.long_timeout = memory.get("timeout_seconds", 180)
+        self.gate = memory.get("gate", True)
+        self.anchor_chars = memory.get("anchor_chars", 1500)
+        self.day_chars = memory.get("day_chars", 900)
+        self.half_life = memory.get("half_life_days", 14)
+        # Host providers finish loading after plugins start.
+        self.start_delay = memory.get("start_delay_seconds", 60)
+        qa = memory.get("qa_list", "")
+        if qa:
+            qa = json.loads((self.base / qa).read_text(encoding="utf-8"))
+        self.qa_list = qa or None
+        numbers = (
+            self.read_new_chars,
+            self.read_idle_minutes,
+            self.read_min_minutes,
+            self.read_max_chars,
+            self.long_timeout,
+            self.anchor_chars,
+            self.day_chars,
+            self.half_life,
+            self.start_delay,
+        )
+        if (
+            not isinstance(self.reading, bool)
+            or not isinstance(self.gate, bool)
+            or any(
+                not isinstance(n, (int, float)) or isinstance(n, bool) or n <= 0
+                for n in numbers
+            )
+            or self.read_min_minutes > self.read_idle_minutes
+            or self.qa_list is not None
+            and (
+                not isinstance(self.qa_list, list)
+                or not 1 <= len(self.qa_list) <= 20
+                or not all(isinstance(q, str) and 2 <= len(q) <= 120 for q in self.qa_list)
+            )
+        ):
+            raise ValueError(
+                "memory 通读配置无效：数值须为正数，read_min_minutes≤read_idle_minutes，qa_list 为 1–20 个问题"
+            )
+        from datetime import time
+
+        time.fromisoformat(self.consolidate_time)
+        # v3 topic episodes (every episode_size messages, or after episode_idle_minutes
+        # of quiet with at least episode_min) stay available as the evaluation baseline.
+        self.episodes = memory.get("episodes", not self.reading)
         self.profiles = memory.get("profiles", True)
         self.episode_size = memory.get("episode_size", 30)
         self.episode_min = memory.get("episode_min", 5)

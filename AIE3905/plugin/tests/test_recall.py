@@ -66,7 +66,10 @@ class RecallTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         cfg = demo_config()
+        # The v3 episode path, kept as the v2 evaluation baseline.
         cfg["memory"] = {
+            "reading": False,
+            "episodes": True,
             "episode_size": 6,
             "episode_min": 3,
             "episode_idle_minutes": 20,
@@ -95,6 +98,7 @@ class RecallTests(unittest.IsolatedAsyncioTestCase):
         return m
 
     def state(self, text="之前谁说过", sender="owner"):
+        self.n += 1
         m = Message("demo", sender, text, utcnow(), native_id="ask" + str(self.n))
         row = self.e.ingest(m, route="dialogue")
         return self.e.conversation.native_state(Actor(sender, ["demo"]), "demo", row)
@@ -229,6 +233,27 @@ class RecallTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(profile[0]["messages"], 1)
         bad = json.loads(self.e.conversation.native_tool(s, "search_history", {}))
         self.assertIn("error", bad)
+
+    async def test_speaker_note_is_injected_only_for_known_members(self):
+        await self.chat()
+        self.model()
+        await self.e.recall.build("demo")
+        prompt = self.e.conversation.native_prompt(self.state("hi", "lin"), "小林")
+        self.assertIn("你对他的印象：小林常组织活动", prompt)
+        stranger = self.e.conversation.native_prompt(self.state("hi", "zhao"), "小赵")
+        self.assertNotIn("你对他的印象", stranger)
+        ghost = self.e.conversation.native_state(
+            Actor("lin", ["demo"]),
+            "demo",
+            dict(
+                uid="x", sender="lin", name="小林", text="hi", at=utcnow(), reply_to=""
+            ),
+            ephemeral=True,
+        )
+        self.assertNotIn("你对他的印象", self.e.conversation.native_prompt(ghost))
+        self.e.store.optout("demo", "lin")
+        after = self.e.conversation.native_prompt(self.state("hi", "yu"), "小余")
+        self.assertNotIn("小林常组织活动", after)
 
 
 if __name__ == "__main__":
