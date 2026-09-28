@@ -30,9 +30,21 @@ class Config:
             if obj.key in self.groups:
                 raise ValueError("群 key 重复")
             self.groups[obj.key] = obj
-        self.dialogue_enabled = data.get("dialogue", {}).get("enabled", True)
+        dialogue = data.get("dialogue", {})
+        self.dialogue_enabled = dialogue.get("enabled", True)
         if not isinstance(self.dialogue_enabled, bool):
             raise ValueError("dialogue.enabled 必须是布尔值")
+        # astrbot: the host agent (persona, subagents, web search) answers mentions
+        # and uses this plugin as context and tools; plugin: the v0.2 JSON loop answers.
+        self.frontend = dialogue.get("frontend", "astrbot")
+        if self.frontend not in {"astrbot", "plugin"}:
+            raise ValueError("dialogue.frontend 必须是 astrbot 或 plugin")
+        self.context_messages = dialogue.get("context_messages", 40)
+        if (
+            type(self.context_messages) is not int
+            or not 0 <= self.context_messages <= 200
+        ):
+            raise ValueError("dialogue.context_messages 必须是0–200的整数")
         self.models = data.get("models", {})
         self.web = data.get("web", {})
         self.max_attempts = int(data.get("max_attempts", 3))

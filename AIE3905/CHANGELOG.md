@@ -1,3 +1,11 @@
+# 未发布（v0.3 第 1 阶段：AstrBot 原生前台）
+
+- 新增 `dialogue.frontend`（默认 `astrbot`）：配置群里 @ 的自然语言交给 AstrBot 主 agent 回答，可以使用宿主的人设、分段回复、子 agent 和联网搜索；每条消息仍然只回一次。`/问`、`/记事` 等命令照旧由插件严格处理。设为 `plugin` 可回退到 v0.2 自有对话。
+- 插件在 `on_llm_request` 用自己的群记录替换宿主会话历史：最近 `context_messages`（默认 40）条群聊，包含 bot 之前的回复，以及当前发言人的引用和草案。撤回、退出记录和过期的内容不会再经由宿主历史进入模型。
+- 新增宿主工具 `search_group_history`、`read_group_items`、`save_group_drafts`、`submit_group_events`。群和身份取自事件，模型无法指定，写入仍走原有校验。这些工具只在配置群的 @ 轮次提供；配置了 `transfer_to_search`／`transfer_to_memory` 子 agent 时，对应工具从主 agent 移除。
+- 回复发送前去掉 QQ 无法显示的 Markdown 和结尾套话；回执只根据实际写入由程序生成，例如“（「聚餐」已记录）”。
+- 新增 `tools/sandbox/`（移植自 GitHub 分支，适配 v0.2 以后的版本）：`--astrbot` 复用本机 AstrBot，不下载、不碰其数据；`--frontend` 切换前台；新增宿主 agent 上下文、真实工具调用、草案、确认与权限的端到端检查。
+
 # v0.2.1 — 2026-09-28
 
 - 修正AstrBot默认回复禁止标志，防止同一提问由宿主和插件各回复一次。

@@ -41,6 +41,7 @@ class Event:
         self.sender = sender
         self.sent = []
         self.default_llm = None
+        self.extras = {}
         self.is_at_or_wake_command = wake
         self.unified_msg_origin = "lark1:GroupMessage:" + group
         self.message_obj = types.SimpleNamespace(
@@ -73,11 +74,17 @@ class Event:
     def should_call_llm(self, value):
         self.default_llm = value
 
+    def set_extra(self, key, value):
+        self.extras[key] = value
+
+    def get_extra(self, key=None, default=None):
+        return self.extras.get(key, default)
+
     async def send(self, chain):
         self.sent.append(chain.text)
 
 
-class AstrBotContractTests(unittest.IsolatedAsyncioTestCase):
+class PluginHarness(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         directory = Path(self.temp.name)
@@ -93,6 +100,9 @@ class AstrBotContractTests(unittest.IsolatedAsyncioTestCase):
         event_module.filter = types.SimpleNamespace(
             EventMessageType=types.SimpleNamespace(ALL="all"),
             event_message_type=lambda kind: lambda f: f,
+            on_llm_request=lambda **kw: lambda f: f,
+            on_decorating_result=lambda **kw: lambda f: f,
+            llm_tool=lambda name=None, **kw: lambda f: f,
         )
         star_module = types.ModuleType("astrbot.api.star")
         star_module.Star = Star
@@ -130,6 +140,8 @@ class AstrBotContractTests(unittest.IsolatedAsyncioTestCase):
         self.modules.stop()
         self.temp.cleanup()
 
+
+class AstrBotContractTests(PluginHarness):
     async def test_non_mentioned_message_is_collected_without_reply(self):
         event = Event("【演示】确认：2026-10-02")
         await self.plugin.observe(event)
@@ -174,6 +186,8 @@ class AstrBotContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ev.sent)
 
     async def test_wake_uses_dialogue_and_does_not_extract_or_append_feedback(self):
+        self.plugin.engine.config.frontend = "plugin"
+
         class Model:
             model = "fake"
 
@@ -199,3 +213,187 @@ class AstrBotContractTests(unittest.IsolatedAsyncioTestCase):
             self.plugin.engine.store.rows("SELECT route FROM messages"),
             [{"route": "background"}],
         )
+
+
+class ToolSet:
+    def __init__(self, names):
+        self.tools = list(names)
+
+    def names(self):
+        return list(self.tools)
+
+    def remove_tool(self, name):
+        self.tools.remove(name)
+
+
+class Request:
+    def __init__(self, names=()):
+        self.func_tool = ToolSet(names)
+        self.system_prompt = "persona"
+        self.contexts = [
+            {"role": "user", "content": "persona example", "_no_save": True},
+            {"role": "user", "content": "stale host history"},
+        ]
+
+
+class Result:
+    def __init__(self, text, llm=True):
+        self.chain = [Plain(text)]
+        self.llm = llm
+
+    def is_llm_result(self):
+        return self.llm
+
+
+class NativeFrontendTests(PluginHarness):
+    """AstrBot answers mentions; the plugin supplies context, tools and receipts."""
+
+    async def mention(self, text, mid, sender="owner"):
+        ev = Event(text, mid=mid, wake=True, sender=sender)
+        await self.plugin.observe(ev)
+        return ev
+
+    async def turn(self, ev, reply):
+        req = Request(["search_group_history", "read_group_items", "web_search_bocha"])
+        await self.plugin.inject_group_context(ev, req)
+        ev.result = Result(reply)
+        ev.get_result = lambda: ev.result
+        await self.plugin.finish_group_turn(ev)
+        return req, ev.result.chain[0].text
+
+    async def test_mention_is_left_to_host_agent_once(self):
+        ev = await self.mention("周末去哪玩", "n1")
+        self.assertFalse(ev.default_llm)
+        self.assertEqual(ev.sent, [])
+        self.assertFalse(self.plugin.reply_tasks)
+        rows = self.plugin.engine.store.rows("SELECT route,status FROM messages")
+        self.assertEqual(rows, [{"route": "dialogue", "status": "dialogue"}])
+        await self.plugin.observe(ev)  # redelivery must not start a second reply
+        self.assertTrue(ev.default_llm)
+
+    async def test_commands_still_answered_by_plugin_only(self):
+        ev = Event("/事项", mid="c1", wake=True)
+        await self.plugin.observe(ev)
+        await asyncio.gather(*list(self.plugin.reply_tasks))
+        self.assertTrue(ev.default_llm)
+        self.assertTrue(ev.sent)
+        self.assertIsNone(ev.get_extra("groupsecretary_turn"))
+
+    async def test_context_replaces_host_history_and_respects_recall(self):
+        await self.plugin.observe(Event("下周三团建去爬山", mid="h1", sender="lin"))
+        await self.plugin.observe(Event("这条之后会撤回", mid="h2", sender="yu"))
+        await self.plugin.ingest_recall("lark1", "123", "h2")
+        await self.plugin.engine.flush("demo")
+        ev = await self.mention("团建定在哪天", "n2")
+        req, _ = await self.turn(ev, "下周三。")
+        self.assertEqual([c["content"] for c in req.contexts], ["persona example"])
+        self.assertIn("下周三团建去爬山", req.system_prompt)
+        self.assertNotIn("之后会撤回", req.system_prompt)
+        self.assertIn("可以正式确认事项", req.system_prompt)
+        ev2 = await self.mention("那几点集合", "n3", sender="lin")
+        req2, _ = await self.turn(ev2, "还没定时间。")
+        self.assertIn(" 你] 下周三。", req2.system_prompt)
+
+    async def test_subagent_owns_its_tools_and_other_chats_get_none(self):
+        ev = await self.mention("查一下新闻", "n4")
+        req = Request(
+            ["transfer_to_search", "web_search_bocha", "search_group_history"]
+        )
+        await self.plugin.inject_group_context(ev, req)
+        self.assertEqual(
+            req.func_tool.names(), ["transfer_to_search", "search_group_history"]
+        )
+        outside = Event("hi", group="other", wake=True)
+        req = Request(
+            ["search_group_history", "submit_group_events", "web_search_bocha"]
+        )
+        await self.plugin.inject_group_context(outside, req)
+        self.assertEqual(req.func_tool.names(), ["web_search_bocha"])
+        self.assertIn("stale host history", str(req.contexts))
+        refused = await self.plugin.search_group_history(outside, "新闻")
+        self.assertIn("不能使用", refused)
+
+    async def test_draft_then_authorized_confirm_records_with_receipt(self):
+        ev = await self.mention("帮我设计团建方案", "d1")
+        saved = json.loads(
+            await self.plugin.save_group_drafts(
+                ev,
+                [
+                    {
+                        "number": 1,
+                        "title": "团建",
+                        "description": "周三爬山",
+                        "fields": {"when": "2026-10-07"},
+                    }
+                ],
+            )
+        )
+        draft_id = saved["drafts"][0]["id"]
+        _, text = await self.turn(ev, "**方案1**：周三爬山。\n希望对你有帮助！")
+        self.assertEqual(text, "方案1：周三爬山。")
+        confirm = await self.mention("就按这个定了", "d2")
+        forged = json.loads(
+            self.plugin._group_tool(
+                confirm,
+                "submit_events",
+                {"events": [{"kind": "confirm", "draft_id": draft_id}], "group": "x"},
+            )
+        )
+        self.assertIn("error", forged)
+        done = json.loads(
+            await self.plugin.submit_group_events(
+                confirm, [{"kind": "confirm", "draft_id": draft_id}]
+            )
+        )
+        self.assertEqual(done["operations"][0]["status"], "recorded")
+        _, text = await self.turn(confirm, "好，定了。")
+        self.assertEqual(text, "好，定了。\n（「团建」已记录）")
+        self.assertEqual(self.plugin.engine.states("demo")[0]["status"], "confirmed")
+        answers = self.plugin.engine.store.rows("SELECT mode FROM answers")
+        self.assertEqual({a["mode"] for a in answers}, {"native"})
+        status = self.plugin.engine.store.rows(
+            "SELECT status FROM messages WHERE route='dialogue'"
+        )
+        self.assertEqual({r["status"] for r in status}, {"done"})
+
+    async def test_unauthorized_confirm_stays_pending(self):
+        ev = await self.mention("设计读书会方案", "u1", sender="lin")
+        saved = json.loads(
+            await self.plugin.save_group_drafts(
+                ev,
+                [
+                    {
+                        "number": 1,
+                        "title": "读书会",
+                        "description": "周五晚",
+                        "fields": {"when": "2026-10-09"},
+                    }
+                ],
+            )
+        )
+        await self.turn(ev, "方案1：周五晚。")
+        confirm = await self.mention("就这么定", "u2", sender="lin")
+        done = json.loads(
+            await self.plugin.submit_group_events(
+                confirm,
+                [{"kind": "confirm", "draft_id": saved["drafts"][0]["id"]}],
+            )
+        )
+        self.assertEqual(done["operations"][0]["status"], "pending_confirmation")
+        _, text = await self.turn(confirm, "我先记下你的意见。")
+        self.assertIn("已提交，等确认人确认", text)
+
+    async def test_opted_out_member_can_chat_but_nothing_is_written(self):
+        await self.plugin.observe(Event("/别记我", sender="lin"))
+        ev = await self.mention("帮我设计方案", "o1", sender="lin")
+        self.assertFalse(ev.default_llm)
+        result = json.loads(
+            await self.plugin.save_group_drafts(
+                ev, [{"number": 1, "title": "x", "description": "y"}]
+            )
+        )
+        self.assertIn("退出记录", result["error"])
+        _, text = await self.turn(ev, "好的。")
+        self.assertTrue(text.startswith("好的。\n（没有写入事项：你已退出记录"))
+        self.assertEqual(self.plugin.engine.store.rows("SELECT id FROM answers"), [])
+        self.assertEqual(self.plugin.engine.store.recent("demo"), [])

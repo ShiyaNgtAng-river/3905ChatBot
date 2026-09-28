@@ -8,13 +8,36 @@ from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.star import Context, Star, StarTools
 
 from .secretary.config import Config
+from .secretary.dialogue import tidy_reply
 from .secretary.engine import Engine
 from .secretary.types import Actor, Message, utcnow
 from .secretary.web import AuditServer
 
+STATE_KEY = "groupsecretary_turn"
+GROUP_TOOLS = {
+    "search_group_history",
+    "read_group_items",
+    "save_group_drafts",
+    "submit_group_events",
+}
+# Tools the main agent must leave to a configured subagent, keyed by handoff name.
+DELEGATED = {
+    "transfer_to_search": (
+        "web_search_",
+        "tavily_extract_web_page",
+        "firecrawl_extract_web_page",
+        "exa_get_contents",
+    ),
+    "transfer_to_memory": ("search_group_history",),
+}
+
 
 class GroupSecretary(Star):
-    """Collect every delivered group message; respond only through this plugin's route."""
+    """Collect every delivered group message and answer each turn exactly once.
+
+    Plugin commands are answered here. With dialogue.frontend=astrbot, natural
+    mentions are answered by the host agent using this plugin's context and tools.
+    """
 
     def __init__(self, context: Context, config=None):
         super().__init__(context)
@@ -164,31 +187,38 @@ class GroupSecretary(Star):
             reply_to=reply,
             attachments=attachments,
         )
-        wants_reply = (
-            text.startswith(
-                (
-                    "/问 ",
-                    "/回溯 ",
-                    "/群报",
-                    "/记事 ",
-                    "/确认 ",
-                    "/反馈 ",
-                    "/原文 ",
-                    "/聊 ",
-                    "/忘掉 ",
-                    "/事项",
-                    "/秘书帮助",
-                    "/秘书状态",
-                )
+        explicit = text.startswith(
+            (
+                "/问 ",
+                "/回溯 ",
+                "/群报",
+                "/记事 ",
+                "/确认 ",
+                "/反馈 ",
+                "/原文 ",
+                "/聊 ",
+                "/忘掉 ",
+                "/事项",
+                "/秘书帮助",
+                "/秘书状态",
             )
-            or text in {"这条记住", "/记住", "这个已经过时了", "已经过时了"}
-            or bool(getattr(event, "is_at_or_wake_command", False))
+        ) or text in {"这条记住", "/记住", "这个已经过时了", "已经过时了"}
+        wake = bool(getattr(event, "is_at_or_wake_command", False))
+        # Natural-language mentions go to the host agent (persona, subagents, web
+        # search); this plugin supplies group context and validated tools.
+        native = (
+            wake
+            and not explicit
+            and not text.startswith("/")
+            and self.engine.config.frontend == "astrbot"
+            and self.engine.config.dialogue_enabled
         )
+        wants_reply = explicit or wake
         try:
             saved = self.engine.ingest(
                 message,
                 route="dialogue"
-                if wants_reply and self.engine.uses_dialogue(text)
+                if native or (wants_reply and self.engine.uses_dialogue(text))
                 else "background",
             )
         except ValueError:
@@ -198,6 +228,25 @@ class GroupSecretary(Star):
             return
         # An opted-out member may still ask a one-off question; it will not be logged.
         if saved is not None and not saved["_new"]:
+            return
+        if native:
+            row = saved or dict(
+                uid=message.uid,
+                group_key=g.key,
+                sender=sender,
+                name=message.name,
+                text=text,
+                at=message.at,
+                reply_to=message.reply_to,
+            )
+            event.set_extra(
+                STATE_KEY,
+                self.engine.conversation.native_state(
+                    actor, g.key, row, ephemeral=saved is None
+                ),
+            )
+            # Only this turn re-enables the host chain; it replaces our own reply.
+            event.should_call_llm(False)
             return
         if not wants_reply:
             return
@@ -241,6 +290,110 @@ class GroupSecretary(Star):
                 "Group secretary reply failed (%s); check provider and platform status.",
                 type(exc).__name__,
             )
+
+    @filter.on_llm_request()
+    async def inject_group_context(self, event: AstrMessageEvent, req):
+        """Give the host agent this group's record and tools for a mention turn."""
+        state = event.get_extra(STATE_KEY)
+        tools = getattr(req, "func_tool", None)
+        names = set(tools.names()) if tools else set()
+        if not state or not self.engine:
+            # Group tools only make sense inside a configured group turn.
+            for name in GROUP_TOOLS & names:
+                tools.remove_tool(name)
+            return
+        contexts = req.contexts
+        if isinstance(contexts, str):
+            contexts = json.loads(contexts)
+        # Host history can hold text this plugin has since erased (recall, opt-out,
+        # retention). Keep only persona example dialogs, which are never saved.
+        req.contexts = [
+            c for c in contexts or [] if isinstance(c, dict) and c.get("_no_save")
+        ]
+        req.system_prompt = (
+            (req.system_prompt or "")
+            + "\n"
+            + self.engine.conversation.native_prompt(state, event.get_sender_name())
+        )
+        # A configured subagent owns its tools so the router cannot bypass it.
+        for handoff, prefixes in DELEGATED.items():
+            if handoff in names:
+                for name in names:
+                    if name != handoff and name.startswith(prefixes):
+                        tools.remove_tool(name)
+
+    def _group_tool(self, event, name, args):
+        state = event.get_extra(STATE_KEY)
+        if not state or not self.engine:
+            return "当前会话不是启用群记的群聊，不能使用该工具。"
+        return self.engine.conversation.native_tool(
+            state, name, {k: v for k, v in args.items() if v is not None}
+        )
+
+    @filter.llm_tool(name="search_group_history")
+    async def search_group_history(self, event: AstrMessageEvent, query: str):
+        """在本群保存的聊天记录里查以前的原话。适合“之前谁说过”“上次怎么说的”这类问题；原话不代表最终决定。
+
+        Args:
+            query(string): 要查的关键词，多个词用空格分开
+        """
+        return self._group_tool(event, "search_messages", {"query": query})
+
+    @filter.llm_tool(name="read_group_items")
+    async def read_group_items(self, event: AstrMessageEvent, query: str = ""):
+        """读取本群正式事项的当前状态、待确认内容和变更历史。
+
+        Args:
+            query(string): 可选，事项名称关键词；留空返回最近的事项
+        """
+        return self._group_tool(event, "read_items", {"query": query})
+
+    @filter.llm_tool(name="save_group_drafts")
+    async def save_group_drafts(
+        self, event: AstrMessageEvent, options: list, sources: list = None
+    ):
+        """把可以被采用的安排方案保存为草案。草案只是建议，不是正式事项。
+
+        Args:
+            options(array[object]): 1到4个方案，每个为 {number:编号1-4, title:稳定的事项名称(不含编号和时间), description:方案说明, fields:{when:带时区的ISO时间或日期, time_raw:原始时间说法, owner:负责人, location:地点, reason:原因, note:备注}, parent_id:修改已有草案时填原草案id}
+            sources(array[string]): 可选，作为依据的消息uid
+        """
+        return self._group_tool(
+            event, "save_drafts", {"options": options, "sources": sources}
+        )
+
+    @filter.llm_tool(name="submit_group_events")
+    async def submit_group_events(self, event: AstrMessageEvent, events: list):
+        """提交正式事项事件，每轮最多一次。有人明确拍板采用草案时用 {kind:"confirm", draft_id:草案id}；是否正式记录由权限决定，以返回结果为准。
+
+        Args:
+            events(array[object]): 事件列表，每个为 {kind:confirm/propose/change/cancel/complete/correct/participant/note/outdated, draft_id:采用草案时填, title:事项名称, fields:{when,time_raw,owner,location,reason,note}, target:已知事件id, scope:series}
+        """
+        return self._group_tool(event, "submit_events", {"events": events})
+
+    @filter.on_decorating_result()
+    async def finish_group_turn(self, event: AstrMessageEvent):
+        """Tidy the host agent's reply, append real write receipts and record it."""
+        state = event.get_extra(STATE_KEY)
+        result = event.get_result()
+        if (
+            not state
+            or not self.engine
+            or state["finished"]
+            or result is None
+            or not result.chain
+            or not result.is_llm_result()
+        ):
+            return
+        plains = [c for c in result.chain if c.__class__.__name__ == "Plain"]
+        if not plains:
+            return
+        plains[0].text = self.engine.conversation.native_finish(
+            state, tidy_reply("".join(c.text for c in plains))
+        )
+        result.chain[:] = [
+            c for c in result.chain if c.__class__.__name__ != "Plain" or c is plains[0]
+        ]
 
     @staticmethod
     async def _send_chunks(send, text):

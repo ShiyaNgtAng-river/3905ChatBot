@@ -3,6 +3,11 @@
   "database": "../data/qq.sqlite3",
   "max_attempts": 3,
   "query_wait_seconds": 8,
+  "dialogue": {
+    "enabled": true,
+    "frontend": "astrbot",
+    "context_messages": 40
+  },
   "groups": [
     {
       "key": "qq-pilot",
