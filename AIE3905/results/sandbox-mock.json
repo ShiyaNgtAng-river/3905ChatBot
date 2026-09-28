@@ -1,0 +1,194 @@
+{
+  "model": "mock",
+  "model_id": "mock-model",
+  "astrbot_tag": "v4.28.1",
+  "started": "2026-09-28T03:16:24",
+  "checks": [
+    {
+      "kind": "system",
+      "name": "插件在 AstrBot v4.28.1 中加载并通过版本检查",
+      "pass": true,
+      "detail": "首次启动已生成禁用采集的配置模板"
+    },
+    {
+      "kind": "system",
+      "name": "普通消息入库、不回复",
+      "pass": true,
+      "detail": "status=done replies=0"
+    },
+    {
+      "kind": "model",
+      "name": "成员提议 → 待确认，时间 10-09 15:00",
+      "pass": true,
+      "detail": "{'status': 'unconfirmed', 'pending': [{'owner': '老张', 'when': '2026-10-09T15:00:00+08:00'}]}"
+    },
+    {
+      "kind": "system",
+      "name": "引用回复经 get_msg 传入插件",
+      "pass": true,
+      "detail": "1002"
+    },
+    {
+      "kind": "model",
+      "name": "确认人引用回复“可以” → 已确认，依据含提议",
+      "pass": true,
+      "detail": "confirmed"
+    },
+    {
+      "kind": "model",
+      "name": "“那次我来不了” → 个人缺席，事项不取消",
+      "pass": true,
+      "detail": "{'status': 'confirmed', 'people': {'20002': 'absent'}}"
+    },
+    {
+      "kind": "model",
+      "name": "非确认人建议取消 → 不覆盖正式结论",
+      "pass": true,
+      "detail": "confirmed"
+    },
+    {
+      "kind": "model",
+      "name": "确认人改期 → 新时间 10-12 10:00 生效",
+      "pass": true,
+      "detail": "{'owner': '老张', 'when': '2026-10-12T10:00:00+08:00', 'reason': '数据还没齐'}"
+    },
+    {
+      "kind": "system",
+      "name": "/问 只收到一条回复（默认 AI 未抢答）",
+      "pass": true,
+      "detail": "replies=1"
+    },
+    {
+      "kind": "model",
+      "name": "/问 回答给出新时间并附依据",
+      "pass": true,
+      "detail": "目前能确认的是：\n• 产品评审｜已确认。负责人：老张；时间：2026-10-12T10:00:00+08:00；原因：数据还没齐 [1] [2] [3]\n\n依据：\n[1] 09-28 11:17 老张：可以（消息 1003）\n[2] 09-28 11:17 小林：建议产品评审放在10月9日下午3点，老张负责，大家看看（消息 1002）\n[3] 09-28 11:17 老张：产品评审改到10月12日"
+    },
+    {
+      "kind": "system",
+      "name": "@机器人提问只收到一条回复",
+      "pass": true,
+      "detail": "replies=1"
+    },
+    {
+      "kind": "system",
+      "name": "重复投递同一消息 → 不重复记事、不回复",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "kind": "system",
+      "name": "OneBot 撤回通知 → 原文清除，依赖它的事件失效",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "kind": "model",
+      "name": "撤回改期后不回退到旧时间",
+      "pass": true,
+      "detail": "{}"
+    },
+    {
+      "kind": "system",
+      "name": "/秘书帮助 单条回复且内容正确",
+      "pass": true,
+      "detail": "replies=1"
+    },
+    {
+      "kind": "system",
+      "name": "/事项 单条回复且内容正确",
+      "pass": true,
+      "detail": "replies=1"
+    },
+    {
+      "kind": "system",
+      "name": "/秘书状态 单条回复且内容正确",
+      "pass": true,
+      "detail": "replies=1"
+    },
+    {
+      "kind": "system",
+      "name": "/群报 1 单条回复且内容正确",
+      "pass": true,
+      "detail": "replies=1"
+    },
+    {
+      "kind": "system",
+      "name": "/记事 提议 → 待确认",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "kind": "system",
+      "name": "/确认 事件ID → 已确认",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "kind": "system",
+      "name": "未配置群的消息不被插件记录",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "kind": "system",
+      "name": "/别记我 → 清除已有消息，后续不记录",
+      "pass": true,
+      "detail": "left=0"
+    },
+    {
+      "kind": "system",
+      "name": "重启后状态保留、无重复事件",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "kind": "system",
+      "name": "全程 AstrBot 日志无异常堆栈",
+      "pass": true,
+      "detail": ""
+    }
+  ],
+  "observations": {
+    "sample_answer": "目前能确认的是：\n• 产品评审｜已确认。负责人：老张；时间：2026-10-12T10:00:00+08:00；原因：数据还没齐 [1] [2] [3]\n\n依据：\n[1] 09-28 11:17 老张：可以（消息 1003）\n[2] 09-28 11:17 小林：建议产品评审放在10月9日下午3点，老张负责，大家看看（消息 1002）\n[3] 09-28 11:17 老张：产品评审改到10月12日上午10点，数据还没齐（消息 1006）\n\n反馈：/反馈 2db667ff980a 类型",
+    "at_answer": "目前能确认的是：\n• 产品评审｜已确认。负责人：老张；时间：2026-10-12T10:00:00+08:00；原因：数据还没齐 [1] [2] [3]\n\n依据：\n[1] 09-28 11:17 老张：可以（消息 1003）\n[2] 09-28 11:17 小林：建议产品评审放在10月9日下午3点，老张负责，大家看看（消息 1002）\n[3] 09-28 11:17 老张：产品评审改到10月12日上午10点，数据还没齐（消息 1006）\n\n反馈：/反馈 d05086a5bf87 类型",
+    "sid_replies": [
+      "未识别的命令。输入 /秘书帮助 查看用法。",
+      "UMO: 「sandbox-qq:GroupMessage:123456」\nUID: 「90001」\n*Use UMO to set whitelist and"
+    ],
+    "seconds_until_failed_during_outage": 65,
+    "failed_message_after_recovery": "failed",
+    "message_status": {
+      "done": 17,
+      "failed": 1
+    },
+    "model_usage": [
+      {
+        "role": "answer_select",
+        "calls": 3,
+        "seconds": 0.0,
+        "errors": 0
+      },
+      {
+        "role": "extract",
+        "calls": 11,
+        "seconds": 64.9,
+        "errors": 3
+      }
+    ],
+    "reply_latency_seconds": [
+      0.02,
+      0.04,
+      0.01,
+      0.01,
+      0.01,
+      0.02,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.08
+    ]
+  },
+  "finished": "2026-09-28T03:19:24"
+}

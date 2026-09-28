@@ -53,6 +53,7 @@ chmod +x run
 | `results/` | 本次实际运行的验证结果与日志 |
 | `docs/` | 交付总结、教程、接口与评测说明、历史分析 |
 | `tools/build_release.py` | 重建完整交付 ZIP、独立插件 ZIP、校验清单 |
+| `tools/sandbox/` | 真实 AstrBot + OneBot 适配器 + 模拟 QQ 群的端到端沙盒；可接假模型或 DeepSeek／Qwen，见其 README |
 | `SOURCE.json` | 原包 SHA-256 与改动范围 |
 
 两个 ZIP 用途不同：完整交付包用于阅读、开发和测试；`astrbot_plugin_groupsecretary_v0.1.1.zip` 用于 AstrBot 的插件文件安装。不要把完整交付包当成插件上传。

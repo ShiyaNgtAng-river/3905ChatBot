@@ -3,6 +3,7 @@
 ## 未发布
 
 - 修复：配置群内被 @ 或以 `/` 唤醒的消息会同时收到插件回复和 AstrBot 默认 LLM 回复。AstrBot 的 `should_call_llm(True)` 才表示禁止默认链路；原实现传入 False。按 AstrBot 4.28.1 源码核对；`dist/` 中的 v0.1.1 压缩包不含此修复。
+- 新增 `tools/sandbox/`：固定 AstrBot v4.28.1，经真实 OneBot v11 适配器回放模拟群聊，区分系统管道检查与模型理解检查；支持本地假模型和 DeepSeek／Qwen。
 - 恢复网页上传丢失的 `.gitignore`，移除误提交的 `__pycache__`。
 
 ## 0.1.1 — 2026-09-28
