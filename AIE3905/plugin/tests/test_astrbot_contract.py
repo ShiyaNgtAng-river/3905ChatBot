@@ -441,3 +441,13 @@ class NativeFrontendTests(PluginHarness):
         self.assertEqual(
             outputs[-1], "好，我记一下。\n定了。\n（「团建」已记录）\n还有别的吗"
         )
+
+    async def test_depth_keywords_switch_to_research_and_filler_is_removed(self):
+        ev = await self.mention("详细讲讲腾讯会议的弱网对抗", "k1")
+        req, text = await self.turn(ev, "我查一下，稍等。结论：靠 FEC 和 SVC。")
+        self.assertIn("当前消息里有“详细”：这次按深度调研的方式回答", req.system_prompt)
+        self.assertIn("transfer_to_search", req.system_prompt)
+        self.assertEqual(text, "结论：靠 FEC 和 SVC。")
+        daily = await self.mention("今天吃什么", "k2")
+        req, _ = await self.turn(daily, "随便。")
+        self.assertNotIn("当前消息里有", req.system_prompt)

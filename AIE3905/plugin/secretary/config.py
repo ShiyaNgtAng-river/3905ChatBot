@@ -39,6 +39,12 @@ class Config:
         self.frontend = dialogue.get("frontend", "astrbot")
         if self.frontend not in {"astrbot", "plugin"}:
             raise ValueError("dialogue.frontend 必须是 astrbot 或 plugin")
+        # Words that switch a mention to a researched, structured answer.
+        self.deep_keywords = dialogue.get("deep_keywords", ["仔细", "深入", "详细"])
+        if not isinstance(self.deep_keywords, list) or not all(
+            isinstance(w, str) and 1 <= len(w) <= 10 for w in self.deep_keywords
+        ):
+            raise ValueError("dialogue.deep_keywords 必须是1–10字的词列表")
         self.context_messages = dialogue.get("context_messages", 40)
         if (
             type(self.context_messages) is not int
