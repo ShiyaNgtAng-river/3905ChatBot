@@ -617,12 +617,15 @@ class Engine:
             )
 
     async def _maintenance(self):
+        # Host model providers finish loading after plugins start; wait before summarising.
+        started = time.monotonic()
         while True:
             for key, g in self.config.groups.items():
                 if not (g.enabled and g.data_use_confirmed):
                     continue
                 self.store.expire(key, g.retention_days)
-                await self._build_memory(key)
+                if time.monotonic() - started > 60:
+                    await self._build_memory(key)
                 now = datetime.now(ZoneInfo(g.timezone))
                 marker = now.date().isoformat()
                 if (
