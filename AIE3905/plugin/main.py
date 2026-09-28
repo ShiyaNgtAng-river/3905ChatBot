@@ -423,9 +423,9 @@ class GroupSecretary(Star):
         plains = [c for c in result.chain if c.__class__.__name__ == "Plain"]
         if not plains:
             return
-        plains[0].text = self.engine.conversation.native_finish(
-            state, tidy_reply("".join(c.text for c in plains))
-        )
+        flags = []
+        text = tidy_reply("".join(c.text for c in plains), flags)
+        plains[0].text = self.engine.conversation.native_finish(state, text, flags)
         result.chain[:] = [
             c for c in result.chain if c.__class__.__name__ != "Plain" or c is plains[0]
         ]

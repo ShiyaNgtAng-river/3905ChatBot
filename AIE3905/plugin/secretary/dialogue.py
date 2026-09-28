@@ -33,6 +33,7 @@ NATIVE_GUIDE = """先看上面的群聊记录，弄清当前发言人在接谁�
 给出可以被采用的安排时用 save_group_drafts 保存，它只是建议；改方案时 parent_id 填原草案 id。
 有人明确拍板采用某个草案时，用 submit_group_events 提交 {"kind":"confirm","draft_id":草案id}。是否成为正式记录由系统按权限决定，以工具返回为准，不要自己宣称“已记录”。
 只是讨论、比较、修改时不要提交正式事件。
+做不到的事用一句自然的话带过，不解释自己的系统能力或限制；同样的解释不说第二遍。
 语气和性格按你的人设；不用 Markdown 标题、加粗和表格（QQ 不显示），不说“作为AI”“希望对你有帮助”。"""
 
 # Filler the model says before a tool call; the host merges it into the answer.
@@ -43,27 +44,67 @@ _FILLER_HEAD = re.compile(
 
 _CANNED_TAIL = re.compile(
     r"\n*\s*(希望(以上|这些)?(内容|信息|回答)?(能)?对你有(所)?帮助|"
-    r"如(果)?(你)?还有(其他|任何)(问题|疑问|需要)|有(其他|任何)问题(欢迎|随时)).*$"
+    r"如(果)?(你)?还有(其他|任何)(问题|疑问|需要)|有(其他|任何)问题(欢迎|随时)|"
+    r"如(有|果有)(需要|问题)[^。！？!?\n]{0,10}(随时|尽管)|"
+    r"有(什么|任何)(需要|问题)[^。！？!?\n]{0,6}(尽管|随时)).*$"
+)
+
+# A service-style apology opening a reply; removed only when text follows.
+_APOLOGY_HEAD = re.compile(
+    r"^\s*(?:非常|十分|很|实在)?(?:抱歉|对不起|不好意思)[，,！!。]\s*"
+)
+
+# Counted but kept: deleting these sentences can leave later ones dangling,
+# and statements that the bot is an AI must never be hidden.
+_STYLE_NOTES = (
+    (
+        "capability_note",
+        re.compile(
+            r"我(这边|目前|暂时)?(只能|只会)|没有[^。！？!?\n]{0,8}(能力|功能)|不具备"
+            r"|(无法|没法)(生成|画|绘制|发送|识别|查看)"
+        ),
+    ),
+    ("as_ai", re.compile(r"作为(一个|一名)?(AI|人工智能|语言模型|大语言模型)")),
 )
 
 
-def tidy_reply(text):
-    """Strip Markdown QQ shows literally, pre-tool filler and a canned sign-off.
+def tidy_reply(text, flags=None):
+    """Strip Markdown QQ shows literally, pre-tool filler and stock service phrases.
 
     Args:
         text: Model output.
+        flags: Optional list that receives the name of every rule that fired,
+            including counted-only notes such as capability explanations.
 
     Returns:
-        The cleaned text; unchanged when nothing matches.
+        The cleaned text; the original when cleaning would leave nothing.
     """
+
+    def hit(name):
+        if flags is not None:
+            flags.append(name)
+
+    before = text
     text = re.sub(r"```[a-zA-Z0-9_-]*\n?", "", text)
     text = re.sub(r"^\s{0,3}#{1,6}\s+", "", text, flags=re.M)
     text = re.sub(r"\*\*(.+?)\*\*|__(.+?)__", lambda m: m.group(1) or m.group(2), text)
     text = re.sub(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)", r"\1 \2", text)
+    if text != before:
+        hit("markdown")
     while (head := _FILLER_HEAD.match(text)) and text[head.end() :].strip():
         text = text[head.end() :]
+        hit("filler")
+    if (head := _APOLOGY_HEAD.match(text)) and text[head.end() :].strip():
+        text = text[head.end() :]
+        hit("apology")
     stripped = _CANNED_TAIL.sub("", text).rstrip()
-    return stripped or text.strip()
+    if stripped and stripped != text.rstrip():
+        hit("canned_tail")
+    result = stripped or text.strip()
+    for name, pattern in _STYLE_NOTES:
+        if pattern.search(result):
+            hit(name)
+    return result
 
 
 SYSTEM = """你是群里的协作助手。理解当前用户的需求，直接提供有用的回答、方案或追问。
@@ -687,6 +728,7 @@ class Dialogue:
             finished=False,
             reported_ops=0,
             reported_errors=0,
+            style_flags={},
             model_label="astrbot-agent",
         )
 
@@ -748,6 +790,19 @@ class Dialogue:
             + ("（可以正式确认事项）" if g.can_confirm(s["actor"].user, "") else "")
             + f"；时间 {clock(m['at'])}（{g.timezone}）。",
         ]
+        # What memory knows about this speaker; opted-out members have none.
+        note = (
+            None
+            if s["ephemeral"]
+            else self.store.one(
+                "SELECT summary FROM profiles WHERE group_key=? AND sender=?",
+                (key, s["actor"].user),
+            )
+        )
+        if note and note["summary"]:
+            parts.append(
+                f"你对他的印象：{one_line(note['summary'], 160)}（来自群里的公开发言，可能不全）"
+            )
         ref = m.get("reply_to", "")
         quoted = self.store.message(key, ref) if ref else None
         if quoted and quoted["at"] <= m["at"]:
@@ -815,7 +870,7 @@ class Dialogue:
             return encode({"error": str(exc)[:180]})
         return encode(result)
 
-    def native_finish(self, s, text):
+    def native_finish(self, s, text, flags=()):
         """Append receipts for new writes and record what the host agent sent.
 
         The host may send several messages in one turn (text before a tool call,
@@ -825,10 +880,13 @@ class Dialogue:
         Args:
             s: State from native_state.
             text: Model text about to be shown to the group.
+            flags: Rule names reported by tidy_reply for this message.
 
         Returns:
             Text to send. Only real tool results produce a receipt.
         """
+        for name in flags:
+            s["style_flags"][name] = s["style_flags"].get(name, 0) + 1
         receipt = []
         for op in s["operations"][s["reported_ops"] :]:
             state = "已记录" if op["status"] == "recorded" else "已提交，等确认人确认"
@@ -858,7 +916,8 @@ class Dialogue:
                         encode(list({op["item_id"] for op in s["operations"]})),
                         encode(
                             {
-                                "prompt_version": "native-1.1",
+                                "prompt_version": "native-1.2",
+                                "style_flags": s["style_flags"],
                                 "draft_ids": [d["id"] for d in s["drafts"]],
                                 "operations": s["operations"],
                             }
@@ -885,7 +944,8 @@ class Dialogue:
                     "native",
                     encode(
                         {
-                            "prompt_version": "native-1.1",
+                            "prompt_version": "native-1.2",
+                            "style_flags": s["style_flags"],
                             "draft_ids": [d["id"] for d in s["drafts"]],
                             "operations": s["operations"],
                         }
