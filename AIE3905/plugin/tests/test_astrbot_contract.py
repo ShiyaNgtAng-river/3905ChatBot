@@ -29,7 +29,7 @@ class Context:
 
 class Event:
     def __init__(self,text,mid='one',wake=False,group='123',sender='owner'):
-        self.text=text;self.group=group;self.sender=sender;self.sent=[];self.default_llm=None
+        self.text=text;self.group=group;self.sender=sender;self.sent=[];self.call_llm=None
         self.is_at_or_wake_command=wake
         self.unified_msg_origin='lark1:GroupMessage:'+group
         self.message_obj=types.SimpleNamespace(message_id=mid,timestamp=(datetime.now(timezone.utc)-timedelta(seconds=2)).isoformat(),raw_message={})
@@ -40,7 +40,7 @@ class Event:
     def get_sender_name(self):return self.sender
     def get_message_str(self):return self.text
     def get_messages(self):return [Plain(self.text)]
-    def should_call_llm(self,value):self.default_llm=value
+    def should_call_llm(self,value):self.call_llm=value  # AstrBot: True blocks default LLM
     async def send(self,chain):self.sent.append(chain.text)
 
 
@@ -74,7 +74,7 @@ class AstrBotContractTests(unittest.IsolatedAsyncioTestCase):
         event=Event('【演示】确认：2026-10-02')
         await self.plugin.observe(event)
         await self.plugin.engine.flush('demo')
-        self.assertFalse(event.default_llm)
+        self.assertTrue(event.call_llm)
         self.assertEqual(event.sent,[])
         self.assertEqual(self.plugin.engine.states('demo')[0]['fields']['when'],'2026-10-02')
 
@@ -83,6 +83,7 @@ class AstrBotContractTests(unittest.IsolatedAsyncioTestCase):
         await self.plugin.engine.flush('demo')
         question=Event('/问 演示现在怎么定',mid='two',wake=True)
         await self.plugin.observe(question)
+        self.assertTrue(question.call_llm)
         await asyncio.gather(*list(self.plugin.reply_tasks))
         sent=len(question.sent)
         self.assertGreater(sent,0)
@@ -92,7 +93,7 @@ class AstrBotContractTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_other_groups_and_bot_messages_are_excluded(self):
         outside=Event('机密',group='other');await self.plugin.observe(outside)
-        self.assertIsNone(outside.default_llm)
+        self.assertIsNone(outside.call_llm)
         await self.plugin.observe(Event('机器人自己说的话',sender='bot'))
         self.assertEqual(self.plugin.engine.store.recent('demo'),[])
 

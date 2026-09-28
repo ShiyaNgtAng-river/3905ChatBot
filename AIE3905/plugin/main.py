@@ -58,7 +58,8 @@ class GroupSecretary(Star):
         if not g:
             return
         # This suppresses only AstrBot's default LLM response, not unrelated plugins.
-        event.should_call_llm(False)
+        # AstrBot names the flag inversely: True means "block the default LLM chain".
+        event.should_call_llm(True)
         if str(event.get_sender_id())==str(event.get_self_id()):
             return
         obj=event.message_obj
