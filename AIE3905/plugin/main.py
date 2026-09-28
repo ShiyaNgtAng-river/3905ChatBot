@@ -415,7 +415,6 @@ class GroupSecretary(Star):
         if (
             not state
             or not self.engine
-            or state["finished"]
             or result is None
             or not result.chain
             or not result.is_llm_result()

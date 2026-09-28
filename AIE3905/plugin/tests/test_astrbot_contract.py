@@ -351,10 +351,8 @@ class NativeFrontendTests(PluginHarness):
         self.assertEqual(self.plugin.engine.states("demo")[0]["status"], "confirmed")
         answers = self.plugin.engine.store.rows("SELECT mode FROM answers")
         self.assertEqual({a["mode"] for a in answers}, {"native"})
-        status = self.plugin.engine.store.rows(
-            "SELECT status FROM messages WHERE route='dialogue'"
-        )
-        self.assertEqual({r["status"] for r in status}, {"done"})
+        status = self.plugin.engine.store.message("demo", "d2")
+        self.assertEqual(status["status"], "done")
 
     async def test_unauthorized_confirm_stays_pending(self):
         ev = await self.mention("设计读书会方案", "u1", sender="lin")
@@ -397,3 +395,59 @@ class NativeFrontendTests(PluginHarness):
         self.assertTrue(text.startswith("好的。\n（没有写入事项：你已退出记录"))
         self.assertEqual(self.plugin.engine.store.rows("SELECT id FROM answers"), [])
         self.assertEqual(self.plugin.engine.store.recent("demo"), [])
+
+    async def test_text_before_tool_call_does_not_close_the_turn(self):
+        # The host sends model text that accompanies a tool call as its own message.
+        ev = await self.mention("帮我设计团建方案", "t1")
+        await self.plugin.inject_group_context(ev, Request())
+        ev.result = Result("我先拟一下～")
+        ev.get_result = lambda: ev.result
+        await self.plugin.finish_group_turn(ev)
+        self.assertEqual(ev.result.chain[0].text, "我先拟一下～")
+        saved = json.loads(
+            await self.plugin.save_group_drafts(
+                ev,
+                [
+                    {
+                        "number": 1,
+                        "title": "团建",
+                        "description": "周三爬山",
+                        "fields": {"when": "2026-10-07"},
+                    }
+                ],
+            )
+        )
+        self.assertIn("drafts", saved)
+        confirm = await self.mention("就按这个定了", "t2")
+        await self.plugin.inject_group_context(confirm, Request())
+        confirm.result = Result("好，我记一下。")
+        confirm.get_result = lambda: confirm.result
+        await self.plugin.finish_group_turn(confirm)
+        await self.plugin.submit_group_events(
+            confirm, [{"kind": "confirm", "draft_id": saved["drafts"][0]["id"]}]
+        )
+        confirm.result = Result("定了。")
+        await self.plugin.finish_group_turn(confirm)
+        self.assertEqual(confirm.result.chain[0].text, "定了。\n（「团建」已记录）")
+        confirm.result = Result("还有别的吗")
+        await self.plugin.finish_group_turn(confirm)
+        self.assertEqual(confirm.result.chain[0].text, "还有别的吗")
+        outputs = [
+            r["output"]
+            for r in self.plugin.engine.store.rows(
+                "SELECT output FROM answers ORDER BY at"
+            )
+        ]
+        self.assertEqual(
+            outputs[-1], "好，我记一下。\n定了。\n（「团建」已记录）\n还有别的吗"
+        )
+
+    async def test_depth_keywords_switch_to_research_and_filler_is_removed(self):
+        ev = await self.mention("详细讲讲腾讯会议的弱网对抗", "k1")
+        req, text = await self.turn(ev, "我查一下，稍等。结论：靠 FEC 和 SVC。")
+        self.assertIn("当前消息里有“详细”：这次按深度调研的方式回答", req.system_prompt)
+        self.assertIn("transfer_to_search", req.system_prompt)
+        self.assertEqual(text, "结论：靠 FEC 和 SVC。")
+        daily = await self.mention("今天吃什么", "k2")
+        req, _ = await self.turn(daily, "随便。")
+        self.assertNotIn("当前消息里有", req.system_prompt)
