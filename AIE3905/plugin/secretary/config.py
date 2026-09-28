@@ -25,16 +25,20 @@ class Config:
                 raise ValueError("retention_days 必须为 1–3650")
             if obj.report_time:
                 from datetime import time
+
                 time.fromisoformat(obj.report_time)
             if obj.key in self.groups:
                 raise ValueError("群 key 重复")
             self.groups[obj.key] = obj
+        self.dialogue_enabled = data.get("dialogue", {}).get("enabled", True)
+        if not isinstance(self.dialogue_enabled, bool):
+            raise ValueError("dialogue.enabled 必须是布尔值")
         self.models = data.get("models", {})
         self.web = data.get("web", {})
         self.max_attempts = int(data.get("max_attempts", 3))
         self.query_wait = float(data.get("query_wait_seconds", 8))
         if not 1 <= self.max_attempts <= 10 or not 0 <= self.query_wait <= 120:
-            raise ValueError('重试次数应为1–10，查询等待应为0–120秒')
+            raise ValueError("重试次数应为1–10，查询等待应为0–120秒")
 
     @classmethod
     def load(cls, path: str | Path):

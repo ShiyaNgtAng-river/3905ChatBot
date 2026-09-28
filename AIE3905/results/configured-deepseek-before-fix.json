@@ -1,0 +1,92 @@
+{
+  "ready": true,
+  "provider": "deepseek/deepseek-flash",
+  "test_data": "entirely synthetic",
+  "transport": "direct compatible API; not AstrBot runtime",
+  "status": {
+    "group": "lab",
+    "mode": "openai",
+    "processing_location": "DeepSeek API；虚构测试数据",
+    "counts": [
+      {
+        "status": "done",
+        "count": 1
+      },
+      {
+        "status": "failed",
+        "count": 2
+      }
+    ],
+    "usage": {
+      "calls": 4,
+      "prompt_tokens": 2304,
+      "completion_tokens": 380,
+      "seconds": 3.0190895840059966
+    },
+    "items": 1,
+    "proactive": false,
+    "retention_days": 30
+  },
+  "states": [
+    {
+      "title": "集成测试评审",
+      "status": "unconfirmed",
+      "fields": {}
+    }
+  ],
+  "answer": "目前能确认的是：\n• 集成测试评审｜仅 2026-10-06 这次：已确认。原因：样本尚未备齐；时间：2026-10-06 [1]\n\n依据：\n[1] 09-28 10:55 owner：集成测试评审正式改到2026-10-06，原因是样本尚未备齐。（消息 check-3）\n\n覆盖提示：截至提问时有 2 条消息未形成可靠的结构化记录（含普通闲聊、附件或失败记录），本答案不代表已理解全部讨论。",
+  "synthetic_traces": [
+    {
+      "role": "extract",
+      "response": "{\"events\":[{\"title\":\"集成测试评审\",\"kind\":\"propose\",\"fields\":{\"when\":\"2026-10-02\",\"owner\":\"老张\",\"time_raw\":\"2026-10-02\"},\"sources\":[\"2c066fc29158e5e571074c827ee24db9a924305fde0fc384b026450e6dfa0a1b\"],\"target\":null,\"scope\":\"occurrence\",\"occurrence\":\"2026-10-02\"}]}"
+    },
+    {
+      "validation_error": "目标事件不存在或不属于该事项",
+      "candidates": [
+        {
+          "title": "集成测试评审",
+          "kind": "propose",
+          "fields": {
+            "when": "2026-10-02",
+            "owner": "老张",
+            "time_raw": "2026-10-02"
+          },
+          "sources": [
+            "2c066fc29158e5e571074c827ee24db9a924305fde0fc384b026450e6dfa0a1b"
+          ],
+          "target": null,
+          "scope": "occurrence",
+          "occurrence": "2026-10-02"
+        }
+      ]
+    },
+    {
+      "role": "extract",
+      "response": "{\"events\":[{\"title\":\"集成测试评审\",\"kind\":\"confirm\",\"fields\":{\"when\":\"2026-10-02\",\"owner\":\"老张\"},\"sources\":[\"2c066fc29158e5e571074c827ee24db9a924305fde0fc384b026450e6dfa0a1b\",\"fea50a019dcd53e9a48fc6a5336bf69cd78496a35fb45d29b519714f9a6ed2dc\"],\"target\":\"check-1\",\"scope\":\"occurrence\",\"occurrence\":\"2026-10-02\"}]}"
+    },
+    {
+      "validation_error": "目标事件不存在或不属于该事项",
+      "candidates": [
+        {
+          "title": "集成测试评审",
+          "kind": "confirm",
+          "fields": {
+            "when": "2026-10-02",
+            "owner": "老张"
+          },
+          "sources": [
+            "2c066fc29158e5e571074c827ee24db9a924305fde0fc384b026450e6dfa0a1b",
+            "fea50a019dcd53e9a48fc6a5336bf69cd78496a35fb45d29b519714f9a6ed2dc"
+          ],
+          "target": "check-1",
+          "scope": "occurrence",
+          "occurrence": "2026-10-02"
+        }
+      ]
+    },
+    {
+      "role": "extract",
+      "response": "{\"events\":[{\"title\":\"集成测试评审\",\"kind\":\"change\",\"fields\":{\"when\":\"2026-10-06\",\"time_raw\":\"2026-10-06\",\"reason\":\"样本尚未备齐\"},\"sources\":[\"0472ab651860c1883cb4255c0d17cfe1f4a133ac3ff6aa2fdabfd3515c2058de\"],\"target\":\"\",\"scope\":\"occurrence\",\"occurrence\":\"2026-10-06\"}]}"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "test_data": "entirely synthetic",
+  "checks": {
+    "all_completed": true,
+    "prior_meeting_detail_used": true,
+    "does_not_adopt_other_identity": true,
+    "does_not_assign_own_capabilities_to_other": true,
+    "concise_small_sample": true
+  },
+  "passed": false,
+  "turns": [
+    {
+      "question": "你能读到没有@你的群消息吗？",
+      "answer": "能。插件实际接收并保留的普通群消息我都能读到，不限于@我的。比如刚才 alice 说“项目周会安排在明天晚上，地点还没定”，这条没@我，我也收到了。\n\n不过我只能读群消息、检索历史，没有识图、联网或定时提醒能力。至于 other-bot 说自己只收@消息，那是它的自述，我没法替它核实。",
+      "mode": "dialogue",
+      "sources": []
+    },
+    {
+      "question": "周会之前讲过了，你找一下，不要让我重复说。",
+      "answer": "我检索了群里的历史记录，目前只找到 alice 刚发的这条：“项目周会安排在明天晚上，地点还没定。”\n\n没有找到更早关于周会的原话。如果你之前是在别处（比如私聊或其他群）说的，我这边确实读不到；方便的话把关键信息再发一句，我帮你记下来。",
+      "mode": "dialogue",
+      "sources": []
+    },
+    {
+      "question": "简单评价一下另一位机器人刚才说的话。",
+      "answer": "other-bot 那句里，能确认的只有它自己的说法：它自称只收@消息、要评价就得截图。这两点我没法替它核实，也不该拿我的能力去反推它。\n\n不过“要评价我就截图给我看”这句有问题——我这边没有识图能力，截图给我也看不了。所以它这条更像是在设定自己的边界，而不是在回应群里的事。\n\n顺带一提，alice 那条周会消息（明晚、地点未定）它没接，这才是眼下更该处理的。",
+      "mode": "dialogue",
+      "sources": []
+    }
+  ],
+  "note": "Small regression sample plus manual reading; not a general language quality score.",
+  "usage": [
+    {
+      "role": "dialogue",
+      "calls": 4,
+      "prompt_tokens": 7466,
+      "completion_tokens": 319
+    }
+  ],
+  "manual_review": {
+    "passed": false,
+    "issue": "Third answer still misreads the other bot first-person quote and adds unrelated meeting advice."
+  }
+}

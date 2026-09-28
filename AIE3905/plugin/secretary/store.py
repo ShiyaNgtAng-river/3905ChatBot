@@ -22,7 +22,9 @@ class Store:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.lock = threading.RLock()
-        self.conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None, timeout=10)
+        self.conn = sqlite3.connect(
+            path, check_same_thread=False, isolation_level=None, timeout=10
+        )
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript("""
         PRAGMA journal_mode=WAL;
@@ -57,18 +59,56 @@ class Store:
           target_hash TEXT,at TEXT);
         PRAGMA user_version=1;
         """)
-        if 'trace' not in {r['name'] for r in self.conn.execute('PRAGMA table_info(answers)')}:
+        if "trace" not in {
+            r["name"] for r in self.conn.execute("PRAGMA table_info(answers)")
+        }:
             self.conn.execute("ALTER TABLE answers ADD COLUMN trace TEXT DEFAULT '{}'")
-        self.fts=True
+        # Additive migrations preserve historical messages and their processing status.
+        if "route" not in {
+            r["name"] for r in self.conn.execute("PRAGMA table_info(messages)")
+        }:
+            self.conn.execute(
+                "ALTER TABLE messages ADD COLUMN route TEXT DEFAULT 'background'"
+            )
+        if "provenance" not in {
+            r["name"] for r in self.conn.execute("PRAGMA table_info(events)")
+        }:
+            self.conn.execute(
+                "ALTER TABLE events ADD COLUMN provenance TEXT DEFAULT '{}'"
+            )
+        self.conn.executescript("""
+        CREATE TABLE IF NOT EXISTS drafts(
+          id TEXT PRIMARY KEY, group_key TEXT, actor TEXT, message_uid TEXT, answer_id TEXT,
+          option_number INTEGER, title TEXT, description TEXT, fields TEXT, sources TEXT,
+          family TEXT, version INTEGER, at TEXT, active INTEGER DEFAULT 1);
+        CREATE INDEX IF NOT EXISTS draft_group ON drafts(group_key,actor,at);
+        CREATE TABLE IF NOT EXISTS dialogue_runs(
+          message_uid TEXT PRIMARY KEY, group_key TEXT, actor TEXT, result TEXT, at TEXT);
+        PRAGMA user_version=2;
+        """)
+        self.fts = True
         try:
-            existing=self.one("SELECT 1 FROM sqlite_master WHERE name='message_fts'")
-            self.conn.execute("CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(uid UNINDEXED,group_key UNINDEXED,tokens)")
+            existing = self.one("SELECT 1 FROM sqlite_master WHERE name='message_fts'")
+            self.conn.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(uid UNINDEXED,group_key UNINDEXED,tokens)"
+            )
             if not existing:
                 with self.tx() as db:
-                    db.executemany('INSERT INTO message_fts(uid,group_key,tokens) VALUES(?,?,?)',
-                        [(r['uid'],r['group_key'],' '.join(sorted(terms(r['text'])))) for r in self.rows("SELECT uid,group_key,text FROM messages WHERE erased=0 AND kind!='recall'")])
+                    db.executemany(
+                        "INSERT INTO message_fts(uid,group_key,tokens) VALUES(?,?,?)",
+                        [
+                            (
+                                r["uid"],
+                                r["group_key"],
+                                " ".join(sorted(terms(r["text"]))),
+                            )
+                            for r in self.rows(
+                                "SELECT uid,group_key,text FROM messages WHERE erased=0 AND kind!='recall'"
+                            )
+                        ],
+                    )
         except sqlite3.OperationalError:
-            self.fts=False
+            self.fts = False
         os.chmod(path, 0o600)
 
     @contextmanager
@@ -99,48 +139,96 @@ class Store:
             db.execute("INSERT OR REPLACE INTO metadata VALUES(?,?)", (key, str(value)))
 
     def opted_out(self, group, sender):
-        r = self.one("SELECT opted_out FROM preferences WHERE group_key=? AND sender=?", (group, sender))
+        r = self.one(
+            "SELECT opted_out FROM preferences WHERE group_key=? AND sender=?",
+            (group, sender),
+        )
         return bool(r and r["opted_out"])
 
-    def put(self, m: Message):
+    def put(self, m: Message, route="background"):
         with self.tx() as db:
             if m.kind != "recall" and self.opted_out(m.group, m.sender):
                 return None
             tokens = ["uid:" + m.uid, "fp:" + m.fingerprint]
             if m.native_id:
                 tokens.append("native:" + digest(m.native_id))
-            if any(self.one("SELECT 1 FROM tombstones WHERE group_key=? AND token=?", (m.group, t)) for t in tokens):
+            if any(
+                self.one(
+                    "SELECT 1 FROM tombstones WHERE group_key=? AND token=?",
+                    (m.group, t),
+                )
+                for t in tokens
+            ):
                 return None
             old = self.one("SELECT * FROM messages WHERE uid=?", (m.uid,))
             if old:
                 if not old["erased"] and old["fingerprint"] != m.fingerprint:
-                    raise ValueError("相同消息 ID 对应不同内容；编辑消息须使用新的 revision 和 edit 类型")
+                    raise ValueError(
+                        "相同消息 ID 对应不同内容；编辑消息须使用新的 revision 和 edit 类型"
+                    )
                 return dict(old, _new=False)
-            duplicate = self.one("SELECT uid FROM messages WHERE group_key=? AND fingerprint=? AND erased=0 LIMIT 1", (m.group, m.fingerprint))
-            db.execute("""INSERT INTO messages(uid,group_key,native_id,sender,name,text,at,kind,revision,
+            duplicate = self.one(
+                "SELECT uid FROM messages WHERE group_key=? AND fingerprint=? AND erased=0 LIMIT 1",
+                (m.group, m.fingerprint),
+            )
+            db.execute(
+                """INSERT INTO messages(uid,group_key,native_id,sender,name,text,at,kind,revision,
               target_id,reply_to,source_url,attachments,fingerprint,dataset,duplicate_of)
-              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
-                m.uid,m.group,m.native_id,m.sender,m.name,m.text,m.at,m.kind,m.revision,m.target_id,
-                m.reply_to,m.source_url,encode(m.attachments),m.fingerprint,m.dataset,
-                duplicate["uid"] if duplicate and not m.native_id else ""))
-            if self.fts and m.kind!='recall':
-                db.execute('INSERT INTO message_fts(uid,group_key,tokens) VALUES(?,?,?)',(m.uid,m.group,' '.join(sorted(terms(m.text)))))
-            return dict(self.one("SELECT * FROM messages WHERE uid=?", (m.uid,)), _new=True)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    m.uid,
+                    m.group,
+                    m.native_id,
+                    m.sender,
+                    m.name,
+                    m.text,
+                    m.at,
+                    m.kind,
+                    m.revision,
+                    m.target_id,
+                    m.reply_to,
+                    m.source_url,
+                    encode(m.attachments),
+                    m.fingerprint,
+                    m.dataset,
+                    duplicate["uid"] if duplicate and not m.native_id else "",
+                ),
+            )
+            db.execute(
+                "UPDATE messages SET route=?,status=? WHERE uid=?",
+                (route, "dialogue" if route == "dialogue" else "pending", m.uid),
+            )
+            if self.fts and m.kind != "recall":
+                db.execute(
+                    "INSERT INTO message_fts(uid,group_key,tokens) VALUES(?,?,?)",
+                    (m.uid, m.group, " ".join(sorted(terms(m.text)))),
+                )
+            return dict(
+                self.one("SELECT * FROM messages WHERE uid=?", (m.uid,)), _new=True
+            )
 
     def pending(self, group, maximum=3):
         # Failed records stay observable; they do not create a false contiguous high-water mark.
-        return self.one("""SELECT * FROM messages WHERE group_key=? AND erased=0
-          AND status IN ('pending','retry') AND attempts<? ORDER BY seq LIMIT 1""", (group, maximum))
+        return self.one(
+            """SELECT * FROM messages WHERE group_key=? AND erased=0
+          AND status IN ('pending','retry') AND attempts<? ORDER BY seq LIMIT 1""",
+            (group, maximum),
+        )
 
     def failure(self, uid, error, maximum):
         with self.tx() as db:
-            db.execute("""UPDATE messages SET attempts=attempts+1, error=?,
+            db.execute(
+                """UPDATE messages SET attempts=attempts+1, error=?,
               status=CASE WHEN attempts+1>=? THEN 'failed' ELSE 'retry' END WHERE uid=? AND erased=0""",
-                       (error, maximum, uid))
+                (error, maximum, uid),
+            )
 
     def message(self, group, uid_or_native):
-        return self.one("""SELECT * FROM messages WHERE group_key=? AND (uid=? OR native_id=?)
-           AND erased=0 AND kind!='recall' ORDER BY seq DESC LIMIT 1""", (group,uid_or_native,uid_or_native))
+        return self.one(
+            """SELECT * FROM messages WHERE group_key=? AND (uid=? OR native_id=?)
+           AND erased=0 AND kind!='recall' ORDER BY seq DESC LIMIT 1""",
+            (group, uid_or_native, uid_or_native),
+        )
 
     def recent(self, group, before=None, limit=30):
         where, args = "group_key=? AND erased=0 AND kind!='recall'", [group]
@@ -148,31 +236,88 @@ class Store:
             where += " AND at<=?"
             args.append(before)
         args.append(limit)
-        rows = self.rows(f"SELECT * FROM messages WHERE {where} ORDER BY seq DESC LIMIT ?", args)
+        rows = self.rows(
+            f"SELECT * FROM messages WHERE {where} ORDER BY seq DESC LIMIT ?", args
+        )
         return list(reversed(rows))
 
     def events(self, group, before=None):
-        sql, args = "SELECT e.*,i.title,i.creator FROM events e JOIN items i ON i.id=e.item_id WHERE e.group_key=?", [group]
+        sql, args = (
+            "SELECT e.*,i.title,i.creator FROM events e JOIN items i ON i.id=e.item_id WHERE e.group_key=?",
+            [group],
+        )
         if before:
             sql += " AND e.at<=?"
             args.append(before)
         rows = self.rows(sql + " ORDER BY e.at,e.seq", args)
         for r in rows:
-            r["payload"], r["sources"] = json.loads(r["payload"]), json.loads(r["sources"])
+            r["payload"], r["sources"] = (
+                json.loads(r["payload"]),
+                json.loads(r["sources"]),
+            )
+            r["provenance"] = json.loads(r.get("provenance") or "{}")
         return rows
 
-    def search(self,group,query,before=None,limit=12):
-        tokens=sorted(terms(query))[:64]
+    def search(self, group, query, before=None, limit=12, exclude_uid=""):
+        tokens = sorted(terms(query))[:64]
         if not tokens:
             return []
-        limit=max(1,min(int(limit),100))
+        limit = max(1, min(int(limit), 100))
         if self.fts:
-            match=' OR '.join('"'+token.replace('"','""')+'"' for token in tokens)
-            return self.rows("""SELECT m.* FROM message_fts JOIN messages m ON m.uid=message_fts.uid
+            match = " OR ".join(
+                '"' + token.replace('"', '""') + '"' for token in tokens
+            )
+            return self.rows(
+                """SELECT m.* FROM message_fts JOIN messages m ON m.uid=message_fts.uid
                 WHERE message_fts MATCH ? AND m.group_key=? AND m.erased=0 AND m.kind!='recall'
-                AND m.at<=? ORDER BY bm25(message_fts),m.at DESC LIMIT ?""",(match,group,before or utcnow(),limit))
-        clauses=' OR '.join('instr(lower(text),?)>0' for _ in tokens)
-        return self.rows(f"SELECT * FROM messages WHERE group_key=? AND erased=0 AND kind!='recall' AND at<=? AND ({clauses}) ORDER BY at DESC LIMIT ?",[group,before or utcnow(),*tokens,limit])
+                AND m.at<=? AND m.uid!=? ORDER BY bm25(message_fts),m.at DESC LIMIT ?""",
+                (match, group, before or utcnow(), exclude_uid, limit),
+            )
+        clauses = " OR ".join("instr(lower(text),?)>0" for _ in tokens)
+        return self.rows(
+            f"SELECT * FROM messages WHERE group_key=? AND erased=0 AND kind!='recall' AND at<=? AND uid!=? AND ({clauses}) ORDER BY at DESC LIMIT ?",
+            [group, before or utcnow(), exclude_uid, *tokens, limit],
+        )
+
+    def drafts(self, group, actor=None, before=None):
+        sql = "SELECT * FROM drafts WHERE group_key=? AND active=1"
+        args = [group]
+        if actor is not None:
+            sql += " AND actor=?"
+            args.append(actor)
+        if before:
+            sql += " AND at<=?"
+            args.append(before)
+        rows = self.rows(sql + " ORDER BY at DESC,rowid DESC LIMIT 24", args)
+        for row in rows:
+            row["fields"], row["sources"] = (
+                json.loads(row["fields"]),
+                json.loads(row["sources"]),
+            )
+        return rows
+
+    def resolve_draft(self, group, message, draft_id):
+        drafts = self.drafts(group, before=message["at"])
+        selected = next((d for d in drafts if d["id"] == draft_id), None)
+        if not selected:
+            raise ValueError("草案不存在、已被修改或已过期")
+        reply = message.get("reply_to", "")
+        explicitly_referenced = reply and reply in {
+            selected["answer_id"],
+            selected["id"],
+        }
+        if not explicitly_referenced:
+            # Without an explicit quote only use this member's most recent draft set.
+            own = [d for d in drafts if d["actor"] == message["sender"]]
+            if (
+                not own
+                or selected["actor"] != message["sender"]
+                or selected["answer_id"] != own[0]["answer_id"]
+            ):
+                raise ValueError("请明确引用要采用的方案，或重新说明安排")
+        if any(not self.message(group, sid) for sid in selected["sources"]):
+            raise ValueError("草案依据已被删除")
+        return selected
 
     def commit(self, message: dict, events: list[dict], status="done"):
         with self.tx() as db:
@@ -181,78 +326,205 @@ class Store:
                 return
             for e in events:
                 # Re-check evidence after the model call: revocation can happen while awaiting it.
-                sources = [self.message(message["group_key"], sid) for sid in e["sources"]]
-                if not sources or any(not s or s["at"] > message["at"] for s in sources):
+                sources = [
+                    self.message(message["group_key"], sid) for sid in e["sources"]
+                ]
+                if not sources or any(
+                    not s or s["at"] > message["at"] for s in sources
+                ):
                     continue
-                db.execute("INSERT OR IGNORE INTO items VALUES(?,?,?,?)", (e["item_id"], e["group_key"],e["title"],e["creator"]))
-                db.execute("UPDATE items SET title=? WHERE id=? AND title='[证据已移除]'", (e["title"],e["item_id"]))
-                keys = ["id","group_key","item_id","message_uid","actor","at","kind","payload","sources","target","scope","occurrence","accepted","reason","model","prompt_version"]
-                values = [encode(e[k]) if k in {"payload","sources"} else e[k] for k in keys]
-                db.execute(f"INSERT OR IGNORE INTO events({','.join(keys)}) VALUES({','.join('?' for _ in keys)})", values)
-            db.execute("UPDATE messages SET status=?,error='' WHERE uid=?", (status,message["uid"]))
-            db.execute("INSERT OR REPLACE INTO metadata VALUES(?,?)", ("last_processed:"+message["group_key"], str(message["seq"])))
+                db.execute(
+                    "INSERT OR IGNORE INTO items VALUES(?,?,?,?)",
+                    (e["item_id"], e["group_key"], e["title"], e["creator"]),
+                )
+                db.execute(
+                    "UPDATE items SET title=? WHERE id=? AND title='[证据已移除]'",
+                    (e["title"], e["item_id"]),
+                )
+                keys = [
+                    "id",
+                    "group_key",
+                    "item_id",
+                    "message_uid",
+                    "actor",
+                    "at",
+                    "kind",
+                    "payload",
+                    "sources",
+                    "target",
+                    "scope",
+                    "occurrence",
+                    "accepted",
+                    "reason",
+                    "model",
+                    "prompt_version",
+                    "provenance",
+                ]
+                values = [
+                    encode(e.get(k, {}))
+                    if k in {"payload", "sources", "provenance"}
+                    else e[k]
+                    for k in keys
+                ]
+                db.execute(
+                    f"INSERT OR IGNORE INTO events({','.join(keys)}) VALUES({','.join('?' for _ in keys)})",
+                    values,
+                )
+            db.execute(
+                "UPDATE messages SET status=?,error='' WHERE uid=?",
+                (status, message["uid"]),
+            )
+            db.execute(
+                "INSERT OR REPLACE INTO metadata VALUES(?,?)",
+                ("last_processed:" + message["group_key"], str(message["seq"])),
+            )
 
     def _purge(self, db, group, ids, actor, action, freeze_native=True):
         ids = set(ids)
         for uid in ids:
-            m = self.one("SELECT * FROM messages WHERE group_key=? AND uid=?", (group,uid))
+            m = self.one(
+                "SELECT * FROM messages WHERE group_key=? AND uid=?", (group, uid)
+            )
             if not m:
                 continue
-            for token in ["uid:"+uid, "fp:"+m["fingerprint"]] + (["native:"+digest(m["native_id"])] if m["native_id"] and freeze_native else []):
-                db.execute("INSERT OR IGNORE INTO tombstones VALUES(?,?)", (group,token))
-            db.execute("UPDATE messages SET erased=1,text='',name='',sender='',attachments='[]',source_url='',error='',status='done' WHERE uid=?", (uid,))
+            for token in ["uid:" + uid, "fp:" + m["fingerprint"]] + (
+                ["native:" + digest(m["native_id"])]
+                if m["native_id"] and freeze_native
+                else []
+            ):
+                db.execute(
+                    "INSERT OR IGNORE INTO tombstones VALUES(?,?)", (group, token)
+                )
+            db.execute(
+                "UPDATE messages SET erased=1,text='',name='',sender='',attachments='[]',source_url='',error='',status='done' WHERE uid=?",
+                (uid,),
+            )
             if self.fts:
-                db.execute('DELETE FROM message_fts WHERE uid=?',(uid,))
+                db.execute("DELETE FROM message_fts WHERE uid=?", (uid,))
         for e in self.events(group):
             if ids.intersection(e["sources"]):
-                db.execute("UPDATE events SET valid=0,payload='{}',actor='',reason='evidence_removed' WHERE id=?", (e["id"],))
+                db.execute(
+                    "UPDATE events SET valid=0,payload='{}',provenance='{}',actor='',reason='evidence_removed' WHERE id=?",
+                    (e["id"],),
+                )
         # Remove generated text conservatively: it may paraphrase removed evidence.
         db.execute("DELETE FROM answers WHERE group_key=?", (group,))
         db.execute("DELETE FROM feedback WHERE group_key=?", (group,))
-        db.execute("UPDATE items SET title='[证据已移除]' WHERE group_key=? AND id NOT IN (SELECT item_id FROM events WHERE valid=1)", (group,))
-        db.execute("INSERT INTO audit(group_key,actor,action,target_hash,at) VALUES(?,?,?,?,?)", (group,actor,action,digest(sorted(ids)),utcnow()))
-        db.execute("INSERT OR REPLACE INTO metadata VALUES(?,?)", ("revocation:"+group,utcnow()))
+        db.execute("DELETE FROM drafts WHERE group_key=?", (group,))
+        db.execute("DELETE FROM dialogue_runs WHERE group_key=?", (group,))
+        db.execute(
+            "UPDATE items SET title='[证据已移除]' WHERE group_key=? AND id NOT IN (SELECT item_id FROM events WHERE valid=1)",
+            (group,),
+        )
+        db.execute(
+            "INSERT INTO audit(group_key,actor,action,target_hash,at) VALUES(?,?,?,?,?)",
+            (group, actor, action, digest(sorted(ids)), utcnow()),
+        )
+        db.execute(
+            "INSERT OR REPLACE INTO metadata VALUES(?,?)",
+            ("revocation:" + group, utcnow()),
+        )
 
     def supersede_revision(self, group, native_id, new_uid):
         with self.tx() as db:
-            ids = [r['uid'] for r in self.rows("SELECT uid FROM messages WHERE group_key=? AND native_id=? AND uid!=? AND erased=0", (group,native_id,new_uid))]
+            ids = [
+                r["uid"]
+                for r in self.rows(
+                    "SELECT uid FROM messages WHERE group_key=? AND native_id=? AND uid!=? AND erased=0",
+                    (group, native_id, new_uid),
+                )
+            ]
             if ids:
-                self._purge(db,group,ids,"platform","edit",freeze_native=False)
+                self._purge(db, group, ids, "platform", "edit", freeze_native=False)
 
     def recall(self, group, native_id, actor="platform"):
         with self.tx() as db:
-            ids = [r["uid"] for r in self.rows("SELECT uid FROM messages WHERE group_key=? AND native_id=?", (group,native_id))]
-            db.execute("INSERT OR IGNORE INTO tombstones VALUES(?,?)", (group,"native:"+digest(native_id)))
-            self._purge(db,group,ids,actor,"recall")
+            ids = [
+                r["uid"]
+                for r in self.rows(
+                    "SELECT uid FROM messages WHERE group_key=? AND native_id=?",
+                    (group, native_id),
+                )
+            ]
+            db.execute(
+                "INSERT OR IGNORE INTO tombstones VALUES(?,?)",
+                (group, "native:" + digest(native_id)),
+            )
+            self._purge(db, group, ids, actor, "recall")
 
     def optout(self, group, sender, enabled=True):
         with self.tx() as db:
-            db.execute("INSERT OR REPLACE INTO preferences VALUES(?,?,?)", (group,sender,int(enabled)))
+            db.execute(
+                "INSERT OR REPLACE INTO preferences VALUES(?,?,?)",
+                (group, sender, int(enabled)),
+            )
             if enabled:
-                ids = [r["uid"] for r in self.rows("SELECT uid FROM messages WHERE group_key=? AND sender=?", (group,sender))]
-                self._purge(db,group,ids,sender,"opt_out")
+                ids = [
+                    r["uid"]
+                    for r in self.rows(
+                        "SELECT uid FROM messages WHERE group_key=? AND sender=?",
+                        (group, sender),
+                    )
+                ]
+                self._purge(db, group, ids, sender, "opt_out")
 
     def forget(self, group, item_id, actor):
         with self.tx() as db:
             events = [e for e in self.events(group) if e["item_id"] == item_id]
             if not events:
                 raise ValueError("事项不存在")
-            self._purge(db,group,{s for e in events for s in e["sources"]},actor,"forget_item")
-            db.execute("DELETE FROM events WHERE group_key=? AND item_id=?", (group,item_id))
-            db.execute("DELETE FROM items WHERE group_key=? AND id=?", (group,item_id))
+            self._purge(
+                db,
+                group,
+                {s for e in events for s in e["sources"]},
+                actor,
+                "forget_item",
+            )
+            db.execute(
+                "DELETE FROM events WHERE group_key=? AND item_id=?", (group, item_id)
+            )
+            db.execute("DELETE FROM items WHERE group_key=? AND id=?", (group, item_id))
 
     def expire(self, group, days, now=None):
-        cutoff = ((now or datetime.now(timezone.utc)) - timedelta(days=days)).isoformat()
-        ids = [r["uid"] for r in self.rows("SELECT uid FROM messages WHERE group_key=? AND at<? AND erased=0", (group,cutoff))]
+        cutoff = (
+            (now or datetime.now(timezone.utc)) - timedelta(days=days)
+        ).isoformat()
+        ids = [
+            r["uid"]
+            for r in self.rows(
+                "SELECT uid FROM messages WHERE group_key=? AND at<? AND erased=0",
+                (group, cutoff),
+            )
+        ]
         if ids:
             with self.tx() as db:
-                self._purge(db,group,ids,"system","retention")
+                self._purge(db, group, ids, "system", "retention")
+        # Generated-only conversations must expire even when no raw message expires.
+        with self.tx() as db:
+            db.execute("DELETE FROM drafts WHERE group_key=? AND at<?", (group, cutoff))
+            db.execute(
+                "DELETE FROM dialogue_runs WHERE group_key=? AND at<?", (group, cutoff)
+            )
+            db.execute(
+                "DELETE FROM answers WHERE group_key=? AND at<?", (group, cutoff)
+            )
         return len(ids)
 
     def log_usage(self, group, role, model, tokens, seconds, error):
         with self.tx() as db:
-            db.execute("INSERT INTO usage(group_key,role,model,prompt_tokens,completion_tokens,seconds,error,at) VALUES(?,?,?,?,?,?,?,?)",
-                       (group,role,model,tokens.get("prompt_tokens"),tokens.get("completion_tokens"),seconds,error,utcnow()))
+            db.execute(
+                "INSERT INTO usage(group_key,role,model,prompt_tokens,completion_tokens,seconds,error,at) VALUES(?,?,?,?,?,?,?,?)",
+                (
+                    group,
+                    role,
+                    model,
+                    tokens.get("prompt_tokens"),
+                    tokens.get("completion_tokens"),
+                    seconds,
+                    error,
+                    utcnow(),
+                ),
+            )
 
     def close(self):
         with self.lock:

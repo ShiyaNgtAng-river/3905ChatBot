@@ -1,0 +1,53 @@
+{
+  "ready": true,
+  "provider": "deepseek/deepseek-flash",
+  "test_data": "entirely synthetic",
+  "transport": "direct compatible API; not AstrBot runtime",
+  "status": {
+    "group": "lab",
+    "mode": "openai",
+    "processing_location": "DeepSeek API；虚构测试数据",
+    "counts": [
+      {
+        "status": "done",
+        "count": 3
+      }
+    ],
+    "usage": {
+      "calls": 4,
+      "prompt_tokens": 2740,
+      "completion_tokens": 369,
+      "seconds": 3.819400791893713
+    },
+    "items": 1,
+    "proactive": false,
+    "retention_days": 30
+  },
+  "states": [
+    {
+      "title": "集成测试评审",
+      "status": "confirmed",
+      "fields": {
+        "owner": "老张",
+        "when": "2026-10-06",
+        "reason": "样本尚未备齐",
+        "time_raw": "2026-10-06"
+      }
+    }
+  ],
+  "answer": "目前能确认的是：\n• 集成测试评审｜已确认。负责人：老张；时间：2026-10-06；原因：样本尚未备齐 [1] [2] [3]\n\n依据：\n[1] 09-28 10:57 owner：可以（消息 check-2）\n[2] 09-28 10:57 lin：建议集成测试评审在2026-10-02举行，负责人是老张，还没定。（消息 check-1）\n[3] 09-28 10:57 owner：集成测试评审正式改到2026-10-06，原因是样本尚未备齐。（消息 check-3）",
+  "synthetic_traces": [
+    {
+      "role": "extract",
+      "response": "{\"events\":[{\"title\":\"集成测试评审\",\"kind\":\"propose\",\"fields\":{\"when\":\"2026-10-02\",\"time_raw\":\"2026-10-02\",\"owner\":\"老张\",\"note\":\"还没定\"},\"sources\":[\"2c066fc29158e5e571074c827ee24db9a924305fde0fc384b026450e6dfa0a1b\"],\"target\":\"\",\"scope\":\"series\",\"occurrence\":\"\"}]}"
+    },
+    {
+      "role": "extract",
+      "response": "{\"events\":[{\"title\":\"集成测试评审\",\"kind\":\"confirm\",\"fields\":{\"when\":\"2026-10-02\",\"owner\":\"老张\"},\"sources\":[\"2c066fc29158e5e571074c827ee24db9a924305fde0fc384b026450e6dfa0a1b\",\"fea50a019dcd53e9a48fc6a5336bf69cd78496a35fb45d29b519714f9a6ed2dc\"],\"target\":\"f087971c298c7abc071b1a9b\",\"scope\":\"series\",\"occurrence\":\"\"}]}"
+    },
+    {
+      "role": "extract",
+      "response": "{\"events\":[{\"title\":\"集成测试评审\",\"kind\":\"change\",\"fields\":{\"when\":\"2026-10-06\",\"time_raw\":\"2026-10-06\",\"reason\":\"样本尚未备齐\"},\"sources\":[\"0472ab651860c1883cb4255c0d17cfe1f4a133ac3ff6aa2fdabfd3515c2058de\"],\"target\":\"\",\"scope\":\"series\",\"occurrence\":\"\"}]}"
+    }
+  ]
+}

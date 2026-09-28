@@ -1,0 +1,7 @@
+{
+  "version": "0.2.0",
+  "installed_source_match": true,
+  "schema_version": 2,
+  "startup": "plugin, provider, dashboard, QQ websocket started",
+  "new_QQ_dialogue_acceptance": "pending user messages"
+}
