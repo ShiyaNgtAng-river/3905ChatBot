@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+data/
+*.sqlite3*
+*.writer.lock
+.env
+.env.*
+config/qq.json
+dist/

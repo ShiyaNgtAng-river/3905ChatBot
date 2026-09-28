@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+data/
+*.sqlite3*
+*.writer.lock
+config.json
+.env
+dist/
+build/
+*.egg-info/
