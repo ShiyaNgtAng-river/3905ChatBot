@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>群记 · 群聊助手</title><link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script></head>
+<body>
+<header><div class="brand"><span class="mark">记</span><div><strong>群记</strong><small>企业群聊助手 · AIE3905</small></div></div><span class="badge">AI 助手 · 审核工作台</span></header>
+<main>
+<section class="intro"><div><p class="eyebrow">让重要的事，有迹可循</p><h1>接上讨论，跟上变化。</h1><p>查看当前安排、追溯每次变更，也能直接指出哪里记错了。</p></div><div class="connection"><label for="token">工作台访问令牌</label><div class="row"><input id="token" type="password" autocomplete="off" placeholder="仅保存在当前页面内存"><button id="connect">连接</button></div><p id="connection-status" role="status">未连接 · 默认仅本机可访问</p></div></section>
+<section class="toolbar"><div class="row"><label for="group">当前群</label><select id="group" aria-label="当前群"></select><button id="refresh" class="ghost">刷新</button></div><div class="row"><button id="demo" class="ghost">导入虚构演示</button><button id="report">生成今日群报</button></div></section>
+<div id="notice" role="status" class="notice">先连接工作台。演示内容均为虚构；真实群聊须按约定授权后接入。</div>
+<section id="stats" class="stats"></section>
+<div class="workspace">
+<section class="panel ask"><div class="section-title"><h2>问一问</h2><span>附来源，可核对</span></div><form id="ask-form"><label for="question" class="sr-only">你的问题</label><div class="row"><input id="question" placeholder="产品演示现在怎么定的？为什么改期？" required><button>查询</button></div></form><div class="quick"><button data-query="我不在时错过了什么？">我错过了什么</button><button data-query="产品演示为什么改期？">为什么发生变化</button><button data-query="还有什么待确认？">待确认事项</button></div><div id="answer" class="empty">答案会显示在这里。</div><div id="feedback" class="quick"></div><details><summary>记事、确认与其他操作</summary><p>示例：/记事 演示 | 确认 | 时间=明天下午三点;优先级=5</p><form id="command-form"><div class="row"><input id="command" placeholder="/秘书帮助" required><button class="ghost">执行</button></div></form></details></section>
+<section class="panel"><div class="section-title"><h2>事项账本</h2><span id="item-count"></span></div><div id="items" class="items"><div class="empty">暂无事项</div></div></section>
+<section class="panel detail"><div class="section-title"><h2 id="detail-title">事项详情</h2><span>当前状态与变更记录</span></div><div id="detail" class="empty">从左侧选择一个事项。</div></section>
+<section class="panel messages"><div class="section-title"><h2>原始消息抽查</h2><span>最近 100 条 · 包括未提取出事件的消息</span></div><div id="messages" class="message-list"><div class="empty">连接后查看</div></div></section>
+</div>
+<footer>本插件不会根据零散反馈自动训练。撤回与删除的范围以部署说明和数据约定为准。</footer>
+</main>
+<dialog id="source-dialog"><button id="close-source" class="ghost">关闭</button><h2>原始依据</h2><pre id="source-content"></pre></dialog>
+</body></html>

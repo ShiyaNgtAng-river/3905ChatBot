@@ -1,0 +1,10 @@
+{"group":"demo","native_id":"m1","sender":"lin","name":"小林","at":"2026-09-22T09:00:00+08:00","text":"/记事 产品演示 | 提议 | 时间=2026-09-25T15:00:00+08:00;负责人=老张;优先级=5"}
+{"group":"demo","native_id":"m2","sender":"owner","name":"老张","at":"2026-09-22T09:01:00+08:00","text":"可以","reply_to":"m1"}
+{"group":"demo","native_id":"m3","sender":"yu","name":"小余","at":"2026-09-22T12:00:00+08:00","text":"午饭吃什么"}
+{"group":"demo","native_id":"m4","sender":"owner","name":"老张","at":"2026-09-23T09:00:00+08:00","text":"/记事 产品演示 | 变更 | 时间=2026-09-29;原因=数据还没准备齐;优先级=5"}
+{"group":"demo","native_id":"m5","sender":"lin","name":"小林","at":"2026-09-23T09:01:00+08:00","text":"/记事 产品演示 | 取消 | 原因=听说要取消，尚未确认"}
+{"group":"demo","native_id":"m6","sender":"owner","name":"老张","at":"2026-09-23T10:00:00+08:00","text":"/记事 资料审核 | 确认 | 负责人=小余;阻塞=缺少报表;优先级=4"}
+{"group":"demo","native_id":"m7","sender":"owner","name":"老张","at":"2026-09-24T09:00:00+08:00","text":"/记事 周会 | 确认 | 时间=每周三晚上八点"}
+{"group":"demo","native_id":"m8","sender":"owner","name":"老张","at":"2026-09-24T09:01:00+08:00","text":"/记事 周会 | 变更 | 时间=2026-09-30T21:00:00+08:00;单次=2026-09-30"}
+{"group":"demo","native_id":"m9","sender":"lin","name":"小林","at":"2026-09-24T09:02:00+08:00","text":"/记事 周会 | 缺席 | 单次=2026-09-30"}
+{"group":"demo","native_id":"r4","sender":"platform","at":"2026-09-25T09:00:00+08:00","text":"","kind":"recall","target_id":"m4"}

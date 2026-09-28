@@ -1,0 +1,16 @@
+[
+  {
+    "archive": "AIE3905_GroupBot_v0.1.1.zip",
+    "files": 73,
+    "manifest_verified": 72,
+    "no_runtime_state": true,
+    "clean_extract_bootstrap": "3.13.5",
+    "clean_extract_bench_pass": true
+  },
+  {
+    "archive": "astrbot_plugin_groupsecretary_v0.1.1.zip",
+    "files": 41,
+    "manifest_verified": 40,
+    "no_runtime_state": true
+  }
+]

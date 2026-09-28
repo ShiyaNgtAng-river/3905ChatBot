@@ -1,0 +1,21 @@
+{
+  "mode": "openai",
+  "database": "../data/local-model.sqlite3",
+  "query_wait_seconds": 8,
+  "max_attempts": 3,
+  "models": {
+    "understanding": {"base_url": "http://127.0.0.1:8000/v1", "model": "YOUR_SMALL_MODEL", "api_key_env": "GROUPBOT_MODEL_API_KEY", "json_mode": true},
+    "answering": {"base_url": "http://127.0.0.1:8000/v1", "model": "YOUR_ANSWER_MODEL", "api_key_env": "GROUPBOT_MODEL_API_KEY", "json_mode": true}
+  },
+  "groups": [{
+    "key": "pilot", "platform_id": "YOUR_ASTRBOT_ADAPTER_INSTANCE_ID", "native_group_id": "YOUR_GROUP_ID",
+    "enabled": false, "data_use_confirmed": false,
+    "admins": ["YOUR_ADMIN_PLATFORM_USER_ID"], "confirmers": ["YOUR_OWNER_PLATFORM_USER_ID"],
+    "confirmation": "designated", "timezone": "Asia/Shanghai", "retention_days": 30,
+    "processing_location": "本机模型服务", "proactive": false, "report_time": "18:00",
+    "glossary": {"演示": "项目阶段演示"},
+    "persona": "你是群里的 AI 助手。简洁、友好、具体。不要每次都重复问题，不假装真人，不编造共同经历。"
+  }],
+  "web": {"enabled": false, "host": "127.0.0.1", "port": 8765,
+    "tokens": [{"env": "GROUPBOT_ADMIN_TOKEN", "user": "YOUR_ADMIN_PLATFORM_USER_ID", "groups": ["pilot"], "admin": true}]}
+}

@@ -1,0 +1,40 @@
+{
+  "mode": "demo",
+  "database": "../data/demo.sqlite3",
+  "max_attempts": 3,
+  "query_wait_seconds": 8,
+  "groups": [
+    {
+      "key": "lab",
+      "enabled": true,
+      "data_use_confirmed": true,
+      "admins": [
+        "owner"
+      ],
+      "confirmers": [
+        "owner"
+      ],
+      "confirmation": "designated",
+      "timezone": "Asia/Shanghai",
+      "retention_days": 30,
+      "processing_location": "本机规则；完全虚构数据",
+      "proactive": false,
+      "report_time": ""
+    }
+  ],
+  "web": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 8765,
+    "tokens": [
+      {
+        "env": "GROUPBOT_ADMIN_TOKEN",
+        "user": "owner",
+        "groups": [
+          "lab"
+        ],
+        "admin": true
+      }
+    ]
+  }
+}

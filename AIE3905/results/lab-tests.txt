@@ -1,0 +1,8 @@
+test_reproducible_and_paired_with_separate_oracle (test_lab.DatasetTest.test_reproducible_and_paired_with_separate_oracle) ... ok
+test_extension_cannot_override_messages_or_model (test_lab.ProviderWireTest.test_extension_cannot_override_messages_or_model) ... ok
+test_thinking_switches_are_top_level_and_keep_json (test_lab.ProviderWireTest.test_thinking_switches_are_top_level_and_keep_json) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.007s
+
+OK

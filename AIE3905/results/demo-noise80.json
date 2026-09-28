@@ -1,0 +1,215 @@
+{
+  "mode": "demo",
+  "dataset": {
+    "generator": "groupbot-lab-1",
+    "seed": 42,
+    "style": "commands",
+    "scenarios": 2,
+    "hard": false,
+    "requested_noise_ratio": 0.8,
+    "actual_noise_ratio": 0.8,
+    "messages": 60,
+    "noise_messages": 48,
+    "noise_types": {
+      "chatter": 48
+    },
+    "checkpoints": 12,
+    "messages_sha256": "16ae882fbea809e4642ad73e42e251f3f55252462650e5552c1a3b246c570e0c",
+    "note": "全为虚构数据；oracle 只在 cases.json；消息、权限与断言分离。"
+  },
+  "message_count": 60,
+  "checkpoint_count": 12,
+  "state_assertion_pass_rate": 1.0,
+  "answer_assertion_pass_rate": 1.0,
+  "processing_failures": 0,
+  "message_status": [
+    {
+      "status": "done",
+      "count": 12
+    },
+    {
+      "status": "unstructured",
+      "count": 48
+    }
+  ],
+  "usage": [],
+  "replay_wall_seconds": 0.28329004091210663,
+  "replay_messages_per_second": 211.79706779249454,
+  "answer_latency_p50_seconds": 0.0009752500336617231,
+  "answer_latency_p95_seconds": 0.0022234999341890216,
+  "batch_drain_seconds": [
+    0.022031125030480325,
+    0.022254499956034124,
+    0.021630542003549635,
+    0.02269579202402383,
+    0.02226391702424735,
+    0.022580915945582092,
+    0.022509624948725104,
+    0.0219931669998914,
+    0.02298708399757743,
+    0.02300191600807011,
+    0.0220079580321908,
+    0.022920417017303407
+  ],
+  "cases": [
+    {
+      "id": "s1-1",
+      "state_pass": true,
+      "answer_assertions_pass": true,
+      "answer": "模拟评审001｜待确认：提议。负责人：老张；时间：2026-10-01（事件 106a83b78369）",
+      "sources": [
+        "s1-1"
+      ],
+      "answer_seconds": 0.0008155000396072865
+    },
+    {
+      "id": "s1-2",
+      "state_pass": true,
+      "answer_assertions_pass": true,
+      "answer": "模拟评审001｜已确认。负责人：老张；时间：2026-10-01",
+      "sources": [
+        "s1-2",
+        "s1-1"
+      ],
+      "answer_seconds": 0.0004559579538181424
+    },
+    {
+      "id": "s2-1",
+      "state_pass": true,
+      "answer_assertions_pass": true,
+      "answer": "模拟评审002｜待确认：提议。负责人：老张；时间：2026-10-02（事件 c1e0f03dada5）\n模拟评审001｜已确认。负责人：老张；时间：2026-10-01",
+      "sources": [
+        "s2-1",
+        "s1-2",
+        "s1-1"
+      ],
+      "answer_seconds": 0.0006032499950379133
+    },
+    {
+      "id": "s1-3",
+      "state_pass": true,
+      "answer_assertions_pass": true,
+      "answer": "模拟评审001｜已确认。负责人：老张；时间：2026-10-15；原因：样本尚未备齐\n模拟评审002｜待确认：提议。负责人：老张；时间：2026-10-02（事件 c1e0f03dada5）",
+      "sources": [
+        "s1-2",
+        "s1-1",
+        "s1-3",
+        "s2-1"
+      ],
+      "answer_seconds": 0.0008108749752864242
+    },
+    {
+      "id": "s1-4",
+      "state_pass": true,
+      "answer_assertions_pass": true,
+      "answer": "模拟评审001｜已确认。负责人：老张；时间：2026-10-15；原因：样本尚未备齐\n模拟评审001｜仅 2026-10-15 这次，成员 lin：缺席\n模拟评审002｜待确认：提议。负责人：老张；时间：2026-10-02（事件 c1e0f03dada5）",
+      "sources": [
+        "s1-2",
+        "s1-1",
+        "s1-3",
+        "s1-4",
+        "s2-1"
+      ],
+      "answer_seconds": 0.0009397499961778522
+    },
+    {
+      "id": "s1-5",
+      "state_pass": true,
+      "answer_assertions_pass": true,
+      "answer": "模拟评审001｜已确认。负责人：老张；时间：2026-10-15；原因：样本尚未备齐\n模拟评审001｜仅 2026-10-15 这次，成员 lin：缺席\n模拟评审001｜待确认：取消。原因：个人建议（事件 0b79a9238da8）\n模拟评审002｜待确认：提议。负责人：老张；时间：2026-10-02（事件 c1e0f03dada5）",
+      "sources": [
+        "s1-2",
+        "s1-1",
+        "s1-3",
+        "s1-4",
+        "s1-5",
+        "s2-1"
+      ],
+      "answer_seconds": 0.0011300829937681556
+    },
+    {
+      "id": "s1-6",
+      "state_pass": true,
+      "answer_assertions_pass": true,
+      "answer": "模拟评审001｜当前安排需重新确认。\n模拟评审001｜仅 2026-10-15 这次，成员 lin：缺席\n模拟评审001｜待确认：取消。原因：个人建议（事件 0b79a9238da8）\n模拟评审002｜待确认：提议。负责人：老张；时间：2026-10-02（事件 c1e0f03dada5）",
+      "sources": [
+        "s1-4",
+        "s1-5",
+        "s2-1"
+      ],
+      "answer_seconds": 0.0008688750676810741
+    },
+    {
+      "id": "s2-2",
+      "state_pass": true,
+      "answer_assertions_pass": true,
+      "answer": "模拟评审002｜已确认。负责人：老张；时间：2026-10-02\n模拟评审001｜当前安排需重新确认。\n模拟评审001｜仅 2026-10-15 这次，成员 lin：缺席\n模拟评审001｜待确认：取消。原因：个人建议（事件 0b79a9238da8）",
+      "sources": [
+        "s2-2",
+        "s2-1",
+        "s1-4",
+        "s1-5"
+      ],
+      "answer_seconds": 0.0010107500711455941
+    },
+    {
+      "id": "s2-3",
+      "state_pass": true,
+      "answer_assertions_pass": true,
+      "answer": "模拟评审002｜已确认。负责人：老张；时间：2026-10-16；原因：样本尚未备齐\n模拟评审001｜当前安排需重新确认。\n模拟评审001｜仅 2026-10-15 这次，成员 lin：缺席\n模拟评审001｜待确认：取消。原因：个人建议（事件 0b79a9238da8）",
+      "sources": [
+        "s2-2",
+        "s2-1",
+        "s2-3",
+        "s1-4",
+        "s1-5"
+      ],
+      "answer_seconds": 0.0011456659995019436
+    },
+    {
+      "id": "s2-4",
+      "state_pass": true,
+      "answer_assertions_pass": true,
+      "answer": "模拟评审002｜已确认。负责人：老张；时间：2026-10-16；原因：样本尚未备齐\n模拟评审002｜仅 2026-10-16 这次，成员 lin：缺席\n模拟评审001｜当前安排需重新确认。\n模拟评审001｜仅 2026-10-15 这次，成员 lin：缺席\n模拟评审001｜待确认：取消。原因：个人建议（事件 0b79a9238da8）",
+      "sources": [
+        "s2-2",
+        "s2-1",
+        "s2-3",
+        "s2-4",
+        "s1-4",
+        "s1-5"
+      ],
+      "answer_seconds": 0.0013278749538585544
+    },
+    {
+      "id": "s2-5",
+      "state_pass": true,
+      "answer_assertions_pass": true,
+      "answer": "模拟评审002｜已确认。负责人：老张；时间：2026-10-16；原因：样本尚未备齐\n模拟评审002｜仅 2026-10-16 这次，成员 lin：缺席\n模拟评审002｜待确认：取消。原因：个人建议（事件 9449d7225296）\n模拟评审001｜当前安排需重新确认。\n模拟评审001｜仅 2026-10-15 这次，成员 lin：缺席\n模拟评审001｜待确认：取消。原因：个人建议（事件 0b79a9238da8）",
+      "sources": [
+        "s2-2",
+        "s2-1",
+        "s2-3",
+        "s2-4",
+        "s2-5",
+        "s1-4",
+        "s1-5"
+      ],
+      "answer_seconds": 0.0022234999341890216
+    },
+    {
+      "id": "s2-6",
+      "state_pass": true,
+      "answer_assertions_pass": true,
+      "answer": "模拟评审002｜当前安排需重新确认。\n模拟评审002｜仅 2026-10-16 这次，成员 lin：缺席\n模拟评审002｜待确认：取消。原因：个人建议（事件 9449d7225296）\n模拟评审001｜当前安排需重新确认。\n模拟评审001｜仅 2026-10-15 这次，成员 lin：缺席\n模拟评审001｜待确认：取消。原因：个人建议（事件 0b79a9238da8）",
+      "sources": [
+        "s2-4",
+        "s2-5",
+        "s1-4",
+        "s1-5"
+      ],
+      "answer_seconds": 0.0016482910141348839
+    }
+  ],
+  "limits": "串行回放；回答延迟在排空提取后测量，不含 QQ 网络延迟；字符串/状态断言不是人工语义评分。规则模式的 unstructured 噪音不代表模型失败。"
+}

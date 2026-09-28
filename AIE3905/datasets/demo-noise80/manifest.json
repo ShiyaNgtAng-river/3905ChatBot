@@ -1,0 +1,17 @@
+{
+  "generator": "groupbot-lab-1",
+  "seed": 42,
+  "style": "commands",
+  "scenarios": 2,
+  "hard": false,
+  "requested_noise_ratio": 0.8,
+  "actual_noise_ratio": 0.8,
+  "messages": 60,
+  "noise_messages": 48,
+  "noise_types": {
+    "chatter": 48
+  },
+  "checkpoints": 12,
+  "messages_sha256": "16ae882fbea809e4642ad73e42e251f3f55252462650e5552c1a3b246c570e0c",
+  "note": "全为虚构数据；oracle 只在 cases.json；消息、权限与断言分离。"
+}

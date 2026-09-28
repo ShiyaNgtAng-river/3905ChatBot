@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+LAB_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ ! -x "$LAB_DIR/.venv/bin/python" ]; then
+  SELECTED_PYTHON="${GROUPBOT_PYTHON:-}"
+  if [ -z "$SELECTED_PYTHON" ]; then
+    for candidate in python3.13 python3.12 python3.11 python3 "$HOME/opt/anaconda3/bin/python"; do
+      if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; sys.exit(sys.version_info < (3,11))' 2>/dev/null; then
+        SELECTED_PYTHON="$candidate"
+        break
+      fi
+    done
+  fi
+  if [ -z "$SELECTED_PYTHON" ] || ! "$SELECTED_PYTHON" -c 'import sys; sys.exit(sys.version_info < (3,11))'; then
+    echo '需要 Python 3.11+。可设置 GROUPBOT_PYTHON 为 Python 可执行文件路径；AstrBot 宿主另需 3.12+。' >&2
+    exit 1
+  fi
+  "$SELECTED_PYTHON" -m venv --without-pip "$LAB_DIR/.venv"
+fi
+exec "$LAB_DIR/.venv/bin/python" "$LAB_DIR/lab.py" "$@"

@@ -1,0 +1,17 @@
+{
+  "mode": "astrbot",
+  "database": "../data/astrbot.sqlite3",
+  "models": {
+    "understanding": {"provider_id": "YOUR_SMALL_MODEL_PROVIDER_ID"},
+    "answering": {"provider_id": "YOUR_MAIN_MODEL_PROVIDER_ID"}
+  },
+  "groups": [{
+    "key": "pilot", "platform_id": "YOUR_ASTRBOT_ADAPTER_INSTANCE_ID", "native_group_id": "YOUR_GROUP_ID",
+    "enabled": false, "data_use_confirmed": false,
+    "admins": ["YOUR_ADMIN_PLATFORM_USER_ID"], "confirmers": ["YOUR_OWNER_PLATFORM_USER_ID"],
+    "confirmation": "designated", "timezone": "Asia/Shanghai", "retention_days": 30,
+    "processing_location": "请填写实际 AstrBot Provider 的处理位置", "proactive": false
+  }],
+  "web": {"enabled": false, "host": "127.0.0.1", "port": 8765,
+    "tokens": [{"env": "GROUPBOT_ADMIN_TOKEN", "user": "YOUR_ADMIN_PLATFORM_USER_ID", "groups": ["pilot"], "admin": true}]}
+}

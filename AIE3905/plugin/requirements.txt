@@ -1,0 +1,2 @@
+# Core uses Python 3.11+ standard library only.
+# AstrBot is supplied by the host installation, not installed by this plugin.

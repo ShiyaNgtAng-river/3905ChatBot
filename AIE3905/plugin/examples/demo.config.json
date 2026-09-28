@@ -1,0 +1,20 @@
+{
+  "mode": "demo",
+  "database": "../data/demo.sqlite3",
+  "groups": [{
+    "key": "demo",
+    "enabled": true,
+    "data_use_confirmed": true,
+    "admins": ["owner"],
+    "confirmers": ["owner"],
+    "confirmation": "designated",
+    "processing_location": "本机规则解析；未调用模型",
+    "timezone": "Asia/Shanghai",
+    "retention_days": 30
+  }],
+  "web": {
+    "host": "127.0.0.1",
+    "port": 8765,
+    "tokens": [{"env": "GROUPBOT_ADMIN_TOKEN", "user": "owner", "groups": ["demo"], "admin": true}]
+  }
+}

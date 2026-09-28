@@ -1,0 +1,60 @@
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "收到，刚才说的是奶茶订单", "native_id": "noise-1", "at": "2026-09-28T01:00:00+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "午饭想吃面条", "native_id": "noise-2", "at": "2026-09-28T01:00:01+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "公交又迟到了", "native_id": "noise-3", "at": "2026-09-28T01:00:02+00:00"}
+{"group": "lab", "sender": "lin", "name": "小林", "text": "/记事 模拟评审001 | 提议 | 时间=2026-10-01;负责人=老张", "native_id": "s1-1", "reply_to": "", "at": "2026-09-28T01:00:03+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "有人看到我的蓝色水杯吗", "native_id": "noise-4", "at": "2026-09-28T01:00:04+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "收到，刚才说的是奶茶订单", "native_id": "noise-5", "at": "2026-09-28T01:00:05+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "公交又迟到了", "native_id": "noise-6", "at": "2026-09-28T01:00:06+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "收到，刚才说的是奶茶订单", "native_id": "noise-7", "at": "2026-09-28T01:00:07+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "昨天游戏里的任务终于打完了", "native_id": "noise-8", "at": "2026-09-28T01:00:08+00:00"}
+{"group": "lab", "sender": "owner", "name": "老张", "text": "可以", "native_id": "s1-2", "reply_to": "s1-1", "at": "2026-09-28T01:00:09+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "有人看到我的蓝色水杯吗", "native_id": "noise-9", "at": "2026-09-28T01:00:10+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "老张，咖啡要不要加糖？", "native_id": "noise-10", "at": "2026-09-28T01:00:11+00:00"}
+{"group": "lab", "sender": "lin", "name": "小林", "text": "/记事 模拟评审002 | 提议 | 时间=2026-10-02;负责人=老张", "native_id": "s2-1", "reply_to": "", "at": "2026-09-28T01:00:12+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "这个表情包太好笑了", "native_id": "noise-11", "at": "2026-09-28T01:00:13+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "😂😂", "native_id": "noise-12", "at": "2026-09-28T01:00:14+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "这个表情包太好笑了", "native_id": "noise-13", "at": "2026-09-28T01:00:15+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "这个表情包太好笑了", "native_id": "noise-14", "at": "2026-09-28T01:00:16+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "公交又迟到了", "native_id": "noise-15", "at": "2026-09-28T01:00:17+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "有人看到我的蓝色水杯吗", "native_id": "noise-16", "at": "2026-09-28T01:00:18+00:00"}
+{"group": "lab", "sender": "owner", "name": "老张", "text": "/记事 模拟评审001 | 变更 | 时间=2026-10-15;原因=样本尚未备齐", "native_id": "s1-3", "reply_to": "", "at": "2026-09-28T01:00:19+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "收到，刚才说的是奶茶订单", "native_id": "noise-17", "at": "2026-09-28T01:00:20+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "😂😂", "native_id": "noise-18", "at": "2026-09-28T01:00:21+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "公交又迟到了", "native_id": "noise-19", "at": "2026-09-28T01:00:22+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "😂😂", "native_id": "noise-20", "at": "2026-09-28T01:00:23+00:00"}
+{"group": "lab", "sender": "lin", "name": "小林", "text": "/记事 模拟评审001 | 缺席 | 单次=2026-10-15", "native_id": "s1-4", "reply_to": "", "at": "2026-09-28T01:00:24+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "老张，咖啡要不要加糖？", "native_id": "noise-21", "at": "2026-09-28T01:00:25+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "昨天游戏里的任务终于打完了", "native_id": "noise-22", "at": "2026-09-28T01:00:26+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "有人看到我的蓝色水杯吗", "native_id": "noise-23", "at": "2026-09-28T01:00:27+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "公交又迟到了", "native_id": "noise-24", "at": "2026-09-28T01:00:28+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "这个表情包太好笑了", "native_id": "noise-25", "at": "2026-09-28T01:00:29+00:00"}
+{"group": "lab", "sender": "yu", "name": "小余", "text": "/记事 模拟评审001 | 取消 | 原因=个人建议", "native_id": "s1-5", "reply_to": "", "at": "2026-09-28T01:00:30+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "午饭想吃面条", "native_id": "noise-26", "at": "2026-09-28T01:00:31+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "公交又迟到了", "native_id": "noise-27", "at": "2026-09-28T01:00:32+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "午饭想吃面条", "native_id": "noise-28", "at": "2026-09-28T01:00:33+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "这个表情包太好笑了", "native_id": "noise-29", "at": "2026-09-28T01:00:34+00:00"}
+{"group": "lab", "sender": "owner", "name": "老张", "text": "", "native_id": "s1-6", "reply_to": "", "kind": "recall", "target_id": "s1-3", "at": "2026-09-28T01:00:35+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "昨天游戏里的任务终于打完了", "native_id": "noise-30", "at": "2026-09-28T01:00:36+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "有人看到我的蓝色水杯吗", "native_id": "noise-31", "at": "2026-09-28T01:00:37+00:00"}
+{"group": "lab", "sender": "owner", "name": "老张", "text": "可以", "native_id": "s2-2", "reply_to": "s2-1", "at": "2026-09-28T01:00:38+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "收到，刚才说的是奶茶订单", "native_id": "noise-32", "at": "2026-09-28T01:00:39+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "公交又迟到了", "native_id": "noise-33", "at": "2026-09-28T01:00:40+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "这个表情包太好笑了", "native_id": "noise-34", "at": "2026-09-28T01:00:41+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "公交又迟到了", "native_id": "noise-35", "at": "2026-09-28T01:00:42+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "老张，咖啡要不要加糖？", "native_id": "noise-36", "at": "2026-09-28T01:00:43+00:00"}
+{"group": "lab", "sender": "owner", "name": "老张", "text": "/记事 模拟评审002 | 变更 | 时间=2026-10-16;原因=样本尚未备齐", "native_id": "s2-3", "reply_to": "", "at": "2026-09-28T01:00:44+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "昨天游戏里的任务终于打完了", "native_id": "noise-37", "at": "2026-09-28T01:00:45+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "老张，咖啡要不要加糖？", "native_id": "noise-38", "at": "2026-09-28T01:00:46+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "😂😂", "native_id": "noise-39", "at": "2026-09-28T01:00:47+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "有人看到我的蓝色水杯吗", "native_id": "noise-40", "at": "2026-09-28T01:00:48+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "😂😂", "native_id": "noise-41", "at": "2026-09-28T01:00:49+00:00"}
+{"group": "lab", "sender": "lin", "name": "小林", "text": "/记事 模拟评审002 | 缺席 | 单次=2026-10-16", "native_id": "s2-4", "reply_to": "", "at": "2026-09-28T01:00:50+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "公交又迟到了", "native_id": "noise-42", "at": "2026-09-28T01:00:51+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "有人看到我的蓝色水杯吗", "native_id": "noise-43", "at": "2026-09-28T01:00:52+00:00"}
+{"group": "lab", "sender": "yu", "name": "小余", "text": "/记事 模拟评审002 | 取消 | 原因=个人建议", "native_id": "s2-5", "reply_to": "", "at": "2026-09-28T01:00:53+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "昨天游戏里的任务终于打完了", "native_id": "noise-44", "at": "2026-09-28T01:00:54+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "昨天游戏里的任务终于打完了", "native_id": "noise-45", "at": "2026-09-28T01:00:55+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "这个表情包太好笑了", "native_id": "noise-46", "at": "2026-09-28T01:00:56+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "公交又迟到了", "native_id": "noise-47", "at": "2026-09-28T01:00:57+00:00"}
+{"group": "lab", "sender": "noise", "name": "闲聊成员", "text": "😂😂", "native_id": "noise-48", "at": "2026-09-28T01:00:58+00:00"}
+{"group": "lab", "sender": "owner", "name": "老张", "text": "", "native_id": "s2-6", "reply_to": "", "kind": "recall", "target_id": "s2-3", "at": "2026-09-28T01:00:59+00:00"}

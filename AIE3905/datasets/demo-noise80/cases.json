@@ -1,0 +1,258 @@
+[
+  {
+    "id": "s1-1",
+    "cluster": "模拟评审001",
+    "group": "lab",
+    "question": "模拟评审001现在怎么定的",
+    "required_sources": [],
+    "contains": [],
+    "not_contains": [],
+    "expected_state": {
+      "title": "模拟评审001",
+      "status": "unconfirmed",
+      "fields": {}
+    },
+    "at": "2026-09-28T01:00:03+00:00"
+  },
+  {
+    "id": "s1-2",
+    "cluster": "模拟评审001",
+    "group": "lab",
+    "question": "模拟评审001现在怎么定的",
+    "required_sources": [
+      "s1-1",
+      "s1-2"
+    ],
+    "contains": [
+      "2026-10-01"
+    ],
+    "not_contains": [],
+    "expected_state": {
+      "title": "模拟评审001",
+      "status": "confirmed",
+      "fields": {
+        "when": "2026-10-01"
+      }
+    },
+    "at": "2026-09-28T01:00:09+00:00"
+  },
+  {
+    "id": "s2-1",
+    "cluster": "模拟评审002",
+    "group": "lab",
+    "question": "模拟评审002现在怎么定的",
+    "required_sources": [],
+    "contains": [],
+    "not_contains": [],
+    "expected_state": {
+      "title": "模拟评审002",
+      "status": "unconfirmed",
+      "fields": {}
+    },
+    "at": "2026-09-28T01:00:12+00:00"
+  },
+  {
+    "id": "s1-3",
+    "cluster": "模拟评审001",
+    "group": "lab",
+    "question": "模拟评审001现在怎么定的",
+    "required_sources": [
+      "s1-3"
+    ],
+    "contains": [
+      "2026-10-15"
+    ],
+    "not_contains": [
+      "2026-10-01"
+    ],
+    "expected_state": {
+      "title": "模拟评审001",
+      "status": "confirmed",
+      "fields": {
+        "when": "2026-10-15"
+      }
+    },
+    "at": "2026-09-28T01:00:19+00:00"
+  },
+  {
+    "id": "s1-4",
+    "cluster": "模拟评审001",
+    "group": "lab",
+    "question": "模拟评审001现在怎么定的",
+    "required_sources": [
+      "s1-3"
+    ],
+    "contains": [
+      "2026-10-15"
+    ],
+    "not_contains": [
+      "2026-10-01"
+    ],
+    "expected_state": {
+      "title": "模拟评审001",
+      "status": "confirmed",
+      "fields": {
+        "when": "2026-10-15"
+      },
+      "absent": {
+        "date": "2026-10-15",
+        "user": "lin"
+      }
+    },
+    "at": "2026-09-28T01:00:24+00:00"
+  },
+  {
+    "id": "s1-5",
+    "cluster": "模拟评审001",
+    "group": "lab",
+    "question": "模拟评审001现在怎么定的",
+    "required_sources": [
+      "s1-3"
+    ],
+    "contains": [
+      "2026-10-15"
+    ],
+    "not_contains": [
+      "2026-10-01"
+    ],
+    "expected_state": {
+      "title": "模拟评审001",
+      "status": "confirmed",
+      "fields": {
+        "when": "2026-10-15"
+      }
+    },
+    "at": "2026-09-28T01:00:30+00:00"
+  },
+  {
+    "id": "s1-6",
+    "cluster": "模拟评审001",
+    "group": "lab",
+    "question": "模拟评审001现在怎么定的",
+    "required_sources": [],
+    "contains": [],
+    "not_contains": [],
+    "expected_state": {
+      "title": "模拟评审001",
+      "status": "uncertain",
+      "fields": {},
+      "missing_fields": [
+        "when"
+      ]
+    },
+    "at": "2026-09-28T01:00:35+00:00"
+  },
+  {
+    "id": "s2-2",
+    "cluster": "模拟评审002",
+    "group": "lab",
+    "question": "模拟评审002现在怎么定的",
+    "required_sources": [
+      "s2-1",
+      "s2-2"
+    ],
+    "contains": [
+      "2026-10-02"
+    ],
+    "not_contains": [],
+    "expected_state": {
+      "title": "模拟评审002",
+      "status": "confirmed",
+      "fields": {
+        "when": "2026-10-02"
+      }
+    },
+    "at": "2026-09-28T01:00:38+00:00"
+  },
+  {
+    "id": "s2-3",
+    "cluster": "模拟评审002",
+    "group": "lab",
+    "question": "模拟评审002现在怎么定的",
+    "required_sources": [
+      "s2-3"
+    ],
+    "contains": [
+      "2026-10-16"
+    ],
+    "not_contains": [
+      "2026-10-02"
+    ],
+    "expected_state": {
+      "title": "模拟评审002",
+      "status": "confirmed",
+      "fields": {
+        "when": "2026-10-16"
+      }
+    },
+    "at": "2026-09-28T01:00:44+00:00"
+  },
+  {
+    "id": "s2-4",
+    "cluster": "模拟评审002",
+    "group": "lab",
+    "question": "模拟评审002现在怎么定的",
+    "required_sources": [
+      "s2-3"
+    ],
+    "contains": [
+      "2026-10-16"
+    ],
+    "not_contains": [
+      "2026-10-02"
+    ],
+    "expected_state": {
+      "title": "模拟评审002",
+      "status": "confirmed",
+      "fields": {
+        "when": "2026-10-16"
+      },
+      "absent": {
+        "date": "2026-10-16",
+        "user": "lin"
+      }
+    },
+    "at": "2026-09-28T01:00:50+00:00"
+  },
+  {
+    "id": "s2-5",
+    "cluster": "模拟评审002",
+    "group": "lab",
+    "question": "模拟评审002现在怎么定的",
+    "required_sources": [
+      "s2-3"
+    ],
+    "contains": [
+      "2026-10-16"
+    ],
+    "not_contains": [
+      "2026-10-02"
+    ],
+    "expected_state": {
+      "title": "模拟评审002",
+      "status": "confirmed",
+      "fields": {
+        "when": "2026-10-16"
+      }
+    },
+    "at": "2026-09-28T01:00:53+00:00"
+  },
+  {
+    "id": "s2-6",
+    "cluster": "模拟评审002",
+    "group": "lab",
+    "question": "模拟评审002现在怎么定的",
+    "required_sources": [],
+    "contains": [],
+    "not_contains": [],
+    "expected_state": {
+      "title": "模拟评审002",
+      "status": "uncertain",
+      "fields": {},
+      "missing_fields": [
+        "when"
+      ]
+    },
+    "at": "2026-09-28T01:00:59+00:00"
+  }
+]

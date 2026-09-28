@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aie3905-groupsecretary"
+version = "0.1.1"
+description = "Auditable group memory and AstrBot assistant"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+groupsecretary = "secretary.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["secretary*"]
+
+[tool.setuptools.package-data]
+secretary = ["ui/*"]

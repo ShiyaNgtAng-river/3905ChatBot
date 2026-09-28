@@ -1,0 +1,9 @@
+[
+  {"id":"initial","cluster":"demo-meeting","group":"demo","at":"2026-09-22T10:00:00+08:00","question":"产品演示现在怎么定？","contains":["已确认","2026-09-25"],"not_contains":["2026-09-29"],"required_sources":["m1","m2"]},
+  {"id":"changed","cluster":"demo-meeting","group":"demo","at":"2026-09-23T09:02:00+08:00","question":"产品演示现在怎么定？","contains":["已确认","2026-09-29","待确认"],"not_contains":["2026-09-25","已取消"],"required_sources":["m4"]},
+  {"id":"reason","cluster":"demo-meeting","group":"demo","at":"2026-09-23T09:03:00+08:00","question":"产品演示为什么改期？","contains":["数据还没准备齐","历史"],"required_sources":["m4"]},
+  {"id":"blocker","cluster":"review","group":"demo","at":"2026-09-23T11:00:00+08:00","question":"资料审核谁负责？","contains":["小余","缺少报表"],"required_sources":["m6"]},
+  {"id":"one-occurrence","cluster":"weekly","group":"demo","at":"2026-09-24T10:00:00+08:00","question":"周会是什么安排？","contains":["每周三晚上八点","仅 2026-09-30","21:00:00","缺席"],"not_contains":["已取消"],"required_sources":["m7","m8","m9"]},
+  {"id":"withdrawal","cluster":"demo-meeting","group":"demo","at":"2026-09-25T10:00:00+08:00","question":"产品演示现在怎么定？","contains":["需重新确认"],"not_contains":["已确认。","2026-09-25","2026-09-29"]},
+  {"id":"unknown","cluster":"unknown","group":"demo","at":"2026-09-25T11:00:00+08:00","question":"火星迁移计划预算多少？","contains":["没有找到足够依据"],"not_contains":["10000","20000"]}
+]

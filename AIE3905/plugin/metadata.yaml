@@ -1,0 +1,10 @@
+name: astrbot_plugin_groupsecretary
+display_name: 群记 · 企业群聊助手
+desc: 持续整理群聊事项，追踪变更，提供带原文依据的查询、群报与审核反馈。
+version: v0.1.1
+author: AIE3905 Project Team
+astrbot_version: '>=4.28.1'
+support_platforms:
+  - lark
+  - aiocqhttp
+  - qq_official

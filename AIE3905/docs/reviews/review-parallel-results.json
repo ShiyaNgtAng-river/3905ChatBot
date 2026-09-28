@@ -1,0 +1,61 @@
+{
+  "prevented_previous_patterns": {
+    "fabricated_answer_text": "目前能确认的是：\n• 演示｜已确认。地点：三楼 [1]\n\n依据：\n[1] 09-26 23:15 owner：/记事 演示 | 确认 | 地点=三楼（消息 1）",
+    "dependent_short_confirmation": "uncertain",
+    "event_id_after_delete": "done",
+    "derived_answer_cleanup": 0,
+    "instance_cancellation": {
+      "series_status": "confirmed",
+      "occurrence_status": "cancelled"
+    },
+    "malformed_extraction": {
+      "status": "failed",
+      "attempts": 3
+    }
+  },
+  "remaining_findings": {
+    "note_correction_bypasses_confirmation": {
+      "actor": "lin",
+      "accepted": 1,
+      "when": "2026-10-06",
+      "status": "confirmed"
+    },
+    "correcting_cancellation_reason_reopens_item": {
+      "before": "cancelled",
+      "after": "confirmed",
+      "reason": "客户请假"
+    },
+    "natural_correction_target_id_absent": {
+      "required_event_id": "a3838c5dca96b5d7bfd5b0e4",
+      "present_in_model_input": false,
+      "candidate_fields": [
+        "title",
+        "fields",
+        "status",
+        "pending"
+      ]
+    },
+    "old_proposal_still_pending_after_new_decision": {
+      "current": "2026-10-06",
+      "pending": [
+        {
+          "time_raw": "2026-10-02",
+          "when": "2026-10-02"
+        }
+      ]
+    },
+    "time_parser_precision_and_range": {
+      "每周三晚上八点": "2026-09-30T20:00:00+08:00",
+      "下下周三下午三点": "2026-10-07T15:00:00+08:00",
+      "明天九点": "2026-09-29T09:00:00+08:00"
+    },
+    "same_title_item_identity_disclosed_limit": {
+      "items": 1,
+      "current": {
+        "owner": "乙团队",
+        "time_raw": "2026-10-06",
+        "when": "2026-10-06"
+      }
+    }
+  }
+}

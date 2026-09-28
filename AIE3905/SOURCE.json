@@ -1,0 +1,8 @@
+{
+  "source_zip": "AIE3905_GroupBot_v0.1.0.zip",
+  "sha256": "e78d3fe73a77a076f0cd6f440f728f59f80c3ae5c896f00bb02de038d151d301",
+  "plugin_files": "secretary/providers.py: thinking switches; metadata.yaml and pyproject.toml: version; RELEASE_v0.1.1.md added; other original source files unchanged",
+  "lab_created": "2026-09-28",
+  "release": "0.1.1",
+  "release_date": "2026-09-28"
+}

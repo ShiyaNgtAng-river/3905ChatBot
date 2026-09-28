@@ -1,0 +1,43 @@
+test_explicit_question_replies_once_and_duplicate_is_suppressed (test_astrbot_contract.AstrBotContractTests.test_explicit_question_replies_once_and_duplicate_is_suppressed) ... ok
+test_explicit_recall_bridge_invalidates_memory (test_astrbot_contract.AstrBotContractTests.test_explicit_recall_bridge_invalidates_memory) ... ok
+test_non_mentioned_message_is_collected_without_reply (test_astrbot_contract.AstrBotContractTests.test_non_mentioned_message_is_collected_without_reply) ... ok
+test_opt_out_control_is_not_stored_as_content (test_astrbot_contract.AstrBotContractTests.test_opt_out_control_is_not_stored_as_content) ... ok
+test_other_groups_and_bot_messages_are_excluded (test_astrbot_contract.AstrBotContractTests.test_other_groups_and_bot_messages_are_excluded) ... ok
+test_ambiguous_time_does_not_keep_previous_exact_time (test_core.CoreTests.test_ambiguous_time_does_not_keep_previous_exact_time) ... ok
+test_as_of_query_and_validation_never_use_future_evidence (test_core.CoreTests.test_as_of_query_and_validation_never_use_future_evidence) ... ok
+test_cross_group_access_and_sources_rejected (test_core.CoreTests.test_cross_group_access_and_sources_rejected) ... ok
+test_edit_invalidates_old_revision_without_blocking_new_one (test_core.CoreTests.test_edit_invalidates_old_revision_without_blocking_new_one) ... ok
+test_failures_are_bounded_and_visible (test_core.CoreTests.test_failures_are_bounded_and_visible) ... ok
+test_followup_uses_same_members_previous_item (test_core.CoreTests.test_followup_uses_same_members_previous_item) ... ok
+test_forget_requires_admin_and_cleans_dependencies (test_core.CoreTests.test_forget_requires_admin_and_cleans_dependencies) ... ok
+test_history_search_is_not_limited_to_recent_context_and_erases_index (test_core.CoreTests.test_history_search_is_not_limited_to_recent_context_and_erases_index) ... ok
+test_independent_confirmation_survives_recalled_proposal (test_core.CoreTests.test_independent_confirmation_survives_recalled_proposal) ... ok
+test_invalid_model_selector_cannot_invent_a_fact (test_core.CoreTests.test_invalid_model_selector_cannot_invent_a_fact) ... ok
+test_occurrence_and_participation_do_not_cancel_series (test_core.CoreTests.test_occurrence_and_participation_do_not_cancel_series) ... ok
+test_opt_out_deletes_derived_data_and_prevents_reimport (test_core.CoreTests.test_opt_out_deletes_derived_data_and_prevents_reimport) ... ok
+test_partial_correction_preserves_other_fields_with_dependencies (test_core.CoreTests.test_partial_correction_preserves_other_fields_with_dependencies) ... ok
+test_priority_can_be_corrected_downwards (test_core.CoreTests.test_priority_can_be_corrected_downwards) ... ok
+test_proactive_conflict_obeys_cooldown (test_core.CoreTests.test_proactive_conflict_obeys_cooldown) ... ok
+test_proposal_reply_confirmation_and_change (test_core.CoreTests.test_proposal_reply_confirmation_and_change) ... ok
+test_recall_does_not_restore_obsolete_arrangement (test_core.CoreTests.test_recall_does_not_restore_obsolete_arrangement) ... ok
+test_remember_and_mark_outdated_by_reply (test_core.CoreTests.test_remember_and_mark_outdated_by_reply) ... ok
+test_removal_during_answer_generation_discards_snapshot (test_core.CoreTests.test_removal_during_answer_generation_discards_snapshot) ... ok
+test_restart_recovers_durable_pending_messages (test_core.CoreTests.test_restart_recovers_durable_pending_messages) ... ok
+test_retention_removes_expired_source_and_blocks_replay (test_core.CoreTests.test_retention_removes_expired_source_and_blocks_replay) ... ok
+test_same_message_id_is_idempotent (test_core.CoreTests.test_same_message_id_is_idempotent) ... ok
+test_second_engine_cannot_write_same_database (test_core.CoreTests.test_second_engine_cannot_write_same_database) ... ok
+test_short_confirmation_is_invalidated_with_its_evidence (test_core.CoreTests.test_short_confirmation_is_invalidated_with_its_evidence) ... ok
+test_unauthorized_cancel_stays_pending_and_admin_accepts_cancel (test_core.CoreTests.test_unauthorized_cancel_stays_pending_and_admin_accepts_cancel) ... ok
+test_after_midnight_tonight_is_ambiguous (test_core.TimeTests.test_after_midnight_tonight_is_ambiguous) ... ok
+test_date_without_hour_stays_date_only (test_core.TimeTests.test_date_without_hour_stays_date_only) ... ok
+test_naive_source_timestamp_is_rejected (test_core.TimeTests.test_naive_source_timestamp_is_rejected) ... ok
+test_authorization_and_group_isolation (test_http.HttpTests.test_authorization_and_group_isolation) ... ok
+test_remote_binding_and_missing_token_fail_closed (test_http.HttpTests.test_remote_binding_and_missing_token_fail_closed) ... ok
+test_ui_and_end_to_end_demo_query_and_feedback (test_http.HttpTests.test_ui_and_end_to_end_demo_query_and_feedback) ... ok
+test_real_http_transport_sends_structured_prompt_and_records_usage (test_http.ProviderTests.test_real_http_transport_sends_structured_prompt_and_records_usage) ... ok
+test_remote_endpoint_requires_explicit_opt_in_and_https (test_http.ProviderTests.test_remote_endpoint_requires_explicit_opt_in_and_https) ... ok
+
+----------------------------------------------------------------------
+Ran 38 tests in 3.761s
+
+OK

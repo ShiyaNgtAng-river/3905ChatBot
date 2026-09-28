@@ -1,0 +1,62 @@
+{
+  "mode": "openai",
+  "database": "../data/qq.sqlite3",
+  "max_attempts": 3,
+  "query_wait_seconds": 8,
+  "groups": [
+    {
+      "key": "qq-pilot",
+      "enabled": false,
+      "data_use_confirmed": false,
+      "admins": [
+        "REPLACE_WITH_PLATFORM_USER_ID"
+      ],
+      "confirmers": [
+        "REPLACE_WITH_PLATFORM_USER_ID"
+      ],
+      "confirmation": "designated",
+      "timezone": "Asia/Shanghai",
+      "retention_days": 30,
+      "processing_location": "填写实际服务商和区域",
+      "proactive": false,
+      "report_time": "",
+      "platform_id": "qq-pilot",
+      "native_group_id": "REPLACE_WITH_PLATFORM_GROUP_ID"
+    }
+  ],
+  "web": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 8765,
+    "tokens": [
+      {
+        "env": "GROUPBOT_ADMIN_TOKEN",
+        "user": "REPLACE_WITH_PLATFORM_USER_ID",
+        "groups": [
+          "qq-pilot"
+        ],
+        "admin": true
+      }
+    ]
+  },
+  "models": {
+    "understanding": {
+      "base_url": "https://YOUR_PROVIDER_BASE_URL/v1",
+      "model": "YOUR_MODEL_ID",
+      "api_key_env": "GROUPBOT_MODEL_API_KEY",
+      "allow_remote": true,
+      "json_mode": true,
+      "timeout": 40,
+      "max_tokens": 1800
+    },
+    "answering": {
+      "base_url": "https://YOUR_PROVIDER_BASE_URL/v1",
+      "model": "YOUR_MODEL_ID",
+      "api_key_env": "GROUPBOT_MODEL_API_KEY",
+      "allow_remote": true,
+      "json_mode": true,
+      "timeout": 40,
+      "max_tokens": 1800
+    }
+  }
+}
