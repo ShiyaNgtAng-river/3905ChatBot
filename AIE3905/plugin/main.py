@@ -18,6 +18,8 @@ GROUP_TOOLS = {
     "search_group_history",
     "get_group_episodes",
     "get_member_profile",
+    "get_topic_timeline",
+    "read_group_day",
     "read_group_items",
     "save_group_drafts",
     "submit_group_events",
@@ -34,6 +36,8 @@ DELEGATED = {
         "search_group_history",
         "get_group_episodes",
         "get_member_profile",
+        "get_topic_timeline",
+        "read_group_day",
     ),
 }
 
@@ -355,12 +359,12 @@ class GroupSecretary(Star):
     async def get_group_episodes(
         self, event: AstrMessageEvent, query: str = "", who: str = "", when: str = ""
     ):
-        """查看本群按话题整理的聊天摘要，适合“最近群里聊了什么”“上周发生了什么”。
+        """查看本群某段时间聊了什么：几天以内按话题列出，更长的时间给每日、每周或每月摘要。适合“最近群里聊了什么”“上周发生了什么”。
 
         Args:
             query(string): 可选，话题关键词
             who(string): 可选，只看某个成员参与的话题
-            when(string): 可选，时间范围，如 今天、上周、最近7天
+            when(string): 可选，时间范围，如 今天、上周、最近7天、上个月；不填为最近三天
         """
         return self._group_tool(
             event, "episodes", {"query": query, "who": who, "when": when}
@@ -374,6 +378,30 @@ class GroupSecretary(Star):
             who(string): 成员名字
         """
         return self._group_tool(event, "profile", {"who": who})
+
+    @filter.llm_tool(name="get_topic_timeline")
+    async def get_topic_timeline(self, event: AstrMessageEvent, query: str):
+        """查某件事在本群的来龙去脉：什么时候定的、后来改过几次、现在以哪条为准，附原话依据。适合“之前怎么定的”“后来改了吗”。
+
+        Args:
+            query(string): 事情的名称或关键词
+        """
+        return self._group_tool(event, "timeline", {"query": query})
+
+    @filter.llm_tool(name="read_group_day")
+    async def read_group_day(self, event: AstrMessageEvent, when: str, question: str):
+        """重读本群某一天的完整聊天记录来回答具体问题，适合摘要和搜索都找不到的细节。要读整天记录，比较慢，只在需要时用。
+
+        Args:
+            when(string): 哪一天，如 今天、昨天、前天、10月3日、2026-10-03
+            question(string): 要在那天的记录里找的问题
+        """
+        state = event.get_extra(STATE_KEY)
+        if not state or not self.engine:
+            return "当前会话不是启用群记的群聊，不能使用该工具。"
+        return await self.engine.conversation.native_tool_async(
+            state, "read_day", {"when": when, "question": question}
+        )
 
     @filter.llm_tool(name="read_group_items")
     async def read_group_items(self, event: AstrMessageEvent, query: str = ""):

@@ -27,8 +27,9 @@ NATIVE_GUIDE = """先看上面的群聊记录，弄清当前发言人在接谁�
 - 调研结果不要压缩成一两句带过，也不要堆砌无关内容。
 - 需要调用工具时直接调用，不要先说“我查一下”“稍等”之类的话。
 
-群里以前说过的事用 search_group_history 查原话（可按人 who、按时间 when 过滤），别凭印象编；查不到就直说只找到了什么。
-问“最近聊了什么”“某段时间发生了什么”用 get_group_episodes 看话题摘要；问某个成员是谁、负责什么用 get_member_profile。
+开头“今天群里的话题”“长期记忆”是后台通读整理的背景，可能不全；拿不准或要细节时再查，别凭印象编。
+群里以前说过的事用 search_group_history 查原话（可按人 who、按时间 when 过滤）；查不到就直说只找到了什么。
+问“最近聊了什么”“某段时间发生了什么”用 get_group_episodes；问某件事是怎么定的、后来有没有改，用 get_topic_timeline；摘要和搜索都找不到的细节，知道是哪天时用 read_group_day 重读那天的记录；问某个成员是谁、负责什么用 get_member_profile。
 正式事项的现状用 read_group_items 查。
 给出可以被采用的安排时用 save_group_drafts 保存，它只是建议；改方案时 parent_id 填原草案 id。
 有人明确拍板采用某个草案时，用 submit_group_events 提交 {"kind":"confirm","draft_id":草案id}。是否成为正式记录由系统按权限决定，以工具返回为准，不要自己宣称“已记录”。
@@ -508,10 +509,17 @@ class Dialogue:
                 return self.e.recall.profile(key, words["who"]) or {
                     "notes": ["本群记录里没有找到这个人"]
                 }
+            if self.e.config.reading:
+                return self.e.reader.summaries(s, **words)
             found = self.e.recall.search(s, **words, messages=False)
             return found["episodes"] or {
                 "notes": found["notes"] or ["这段时间还没有整理出话题摘要"]
             }
+        if name == "timeline":
+            query = args.get("query", "")
+            if not isinstance(query, str) or not 1 <= len(query) <= 200:
+                raise ValueError("query 需为1–200字")
+            return self.e.reader.timeline(s, query)
         if name == "read_items":
             query = args.get("query", "")
             if not isinstance(query, str) or len(query) > 200:
@@ -839,6 +847,15 @@ class Dialogue:
                 f"- {clock(e['start_at'])}–{clock(e['end_at'])} {one_line(e['summary'], 150)}"
                 for e in older
             ]
+        if self.e.config.reading:
+            # Background first: it changes slowly, so the host prompt prefix stays cacheable.
+            brief = self.e.reader.brief(
+                key,
+                " ".join([m.get("text", ""), quoted["text"] if quoted else ""]),
+                m["at"],
+            )
+            if brief:
+                parts.insert(0, "<group_memory>\n" + brief + "\n</group_memory>")
         words = [w for w in self.e.config.deep_keywords if w in m.get("text", "")]
         if words:
             parts.append(
@@ -868,6 +885,35 @@ class Dialogue:
             if name in {"save_drafts", "submit_events"}:
                 s["write_errors"].append(str(exc)[:180])
             return encode({"error": str(exc)[:180]})
+        return encode(result)
+
+    async def native_tool_async(self, s, name, args):
+        """Like native_tool, for tools that call a model (rereading a day).
+
+        Args:
+            s: State from native_state.
+            name: read_day.
+            args: {"when": ..., "question": ...} from the model.
+
+        Returns:
+            JSON string with the answer or an error the model can act on.
+        """
+        try:
+            if s["tool_count"] >= 12:
+                raise ValueError("本轮工具调用次数已用完，请直接回答")
+            self._check_revision(s)
+            s["tool_count"] += 1
+            if name != "read_day":
+                raise ValueError("未知工具")
+            when, question = args.get("when", ""), args.get("question", "")
+            if not all(isinstance(v, str) and 1 <= len(v) <= 200 for v in (when, question)):
+                raise ValueError("when 和 question 需为1–200字")
+            result = await self.e.reader.reread(s, when, question)
+            self._check_revision(s)
+        except (ValueError, PermissionError, TypeError, KeyError) as exc:
+            return encode({"error": str(exc)[:180]})
+        except Exception as exc:
+            return encode({"error": "重读失败：" + type(exc).__name__})
         return encode(result)
 
     def native_finish(self, s, text, flags=()):

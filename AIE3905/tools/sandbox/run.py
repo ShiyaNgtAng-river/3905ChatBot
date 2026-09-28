@@ -180,8 +180,9 @@ class Sandbox:
                'web': {'enabled': False},
                'models': {'understanding': {'provider_id': 'sandbox-model'}, 'answering': {'provider_id': 'sandbox-model'}},
                'dialogue': {'frontend': self.args.frontend},
-               # Small, idle-free episodes so the maintenance loop summarises during the run.
-               'memory': {'episode_size': 10, 'episode_min': 3, 'episode_idle_minutes': 0}}
+               # Near-immediate reading passes so the memory loop reads the day during the run.
+               'memory': {'read_new_chars': 1, 'read_idle_minutes': 0.05, 'read_min_minutes': 0.05,
+                          'start_delay_seconds': 1}}
         (self.pdata / 'config.json').write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
 
     def start_mock(self):
@@ -544,15 +545,21 @@ async def native_checks(sb, ask, first_reply, t0):
     sb.check(S, '非确认人自然确认 → 只进入待确认', len(out) == 1 and '等确认人确认' in out[0]['text']
              and s and s['status'] != 'confirmed', out[0]['text'][:80] if out else 'no reply')
 
-    # Maintenance runs every 30 s; with the sandbox memory settings an episode is due.
+    # The memory loop ticks every 30 s; with the sandbox settings a reading pass is due.
     end = time.time() + 75
-    while time.time() < end and not sb.count('SELECT COUNT(*) FROM episodes'):
+    while time.time() < end and not sb.count('SELECT COUNT(*) FROM day_views'):
         await asyncio.sleep(1)
-    episodes, profiles = sb.count('SELECT COUNT(*) FROM episodes'), sb.count('SELECT COUNT(*) FROM profiles')
-    sb.check(S, '后台维护生成话题摘要与成员印象', episodes >= 1 and profiles >= 1,
-             f'episodes={episodes} profiles={profiles}')
+    views = sb.count('SELECT COUNT(*) FROM day_views')
+    cached = sb.count("SELECT COALESCE(SUM(cached_tokens),0) FROM usage WHERE role='reading'")
+    sb.check(S, '后台通读经宿主模型生成当天目录，并记录缓存命中量', views == 1 and cached > 0,
+             f'day_views={views} cached_tokens={cached}')
+    t = time.time()
     out = await ask(OWNER, '最近群里聊了什么', at=True)
-    sb.check(S, '宿主 agent 调用 get_group_episodes 取到话题摘要', len(out) == 1 and '沙盒话题' in out[0]['text'],
+    turn = sb.mock_calls('host_agent', t)
+    sb.check(S, '@ 的提示先放当天目录，get_group_episodes 取到当天话题',
+             len(out) == 1 and '沙盒话题' in out[0]['text'] and bool(turn)
+             and 0 <= turn[0]['system'].find('<group_memory>') < turn[0]['system'].find('<group_chat>')
+             and '今天群里的话题' in turn[0]['system'],
              out[0]['text'][:80] if out else 'no reply')
 
 

@@ -66,7 +66,10 @@ class RecallTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         cfg = demo_config()
+        # The v3 episode path, kept as the v2 evaluation baseline.
         cfg["memory"] = {
+            "reading": False,
+            "episodes": True,
             "episode_size": 6,
             "episode_min": 3,
             "episode_idle_minutes": 20,

@@ -9,11 +9,14 @@
     "context_messages": 40
   },
   "memory": {
-    "episodes": true,
-    "profiles": true,
-    "episode_size": 30,
-    "episode_min": 5,
-    "episode_idle_minutes": 20
+    "reading": true,
+    "qa_list": "qa_list.json",
+    "read_new_chars": 6000,
+    "read_idle_minutes": 60,
+    "read_min_minutes": 10,
+    "consolidate_time": "04:00",
+    "gate": true,
+    "profiles": true
   },
   "groups": [
     {
@@ -57,6 +60,9 @@
     },
     "answering": {
       "provider_id": "REPLACE_WITH_ASTRBOT_PROVIDER_ID"
+    },
+    "consolidating": {
+      "provider_id": "REPLACE_WITH_STRONGER_ASTRBOT_PROVIDER_ID"
     }
   }
 }

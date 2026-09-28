@@ -3,7 +3,7 @@
   "model_id": "mock-model",
   "astrbot_tag": "local v4.28.1",
   "frontend": "astrbot",
-  "started": "2026-09-28T15:34:20",
+  "started": "2026-09-28T19:48:40",
   "checks": [
     {
       "kind": "system",
@@ -63,7 +63,7 @@
       "kind": "model",
       "name": "/问 回答给出新时间并附依据",
       "pass": true,
-      "detail": "目前能确认的是：\n• 产品评审｜已确认。负责人：老张；时间：2026-10-12T10:00:00+08:00；原因：数据还没齐 [1] [2] [3]\n\n依据：\n[1] 09-28 15:34 老张：可以（消息 1003）\n[2] 09-28 15:34 小林：建议产品评审放在10月9日下午3点，老张负责，大家看看（消息 1002）\n[3] 09-28 15:34 老张：产品评审改到10月12日"
+      "detail": "目前能确认的是：\n• 产品评审｜已确认。负责人：老张；时间：2026-10-12T10:00:00+08:00；原因：数据还没齐 [1] [2] [3]\n\n依据：\n[1] 09-28 19:48 老张：可以（消息 1003）\n[2] 09-28 19:48 小林：建议产品评审放在10月9日下午3点，老张负责，大家看看（消息 1002）\n[3] 09-28 19:48 老张：产品评审改到10月12日"
     },
     {
       "kind": "system",
@@ -75,7 +75,7 @@
       "kind": "system",
       "name": "@ 由宿主 agent 回答：带群聊上下文、群记工具，且不带宿主旧历史",
       "pass": true,
-      "detail": "{'tools': ['future_task', 'get_group_episodes', 'get_member_profile', 'read_group_items', 'save_group_drafts', 'search_group_history', 'send_message_to_user', 'submit_group_events'], 'history': 1}"
+      "detail": "{'tools': ['future_task', 'get_group_episodes', 'get_member_profile', 'get_topic_timeline', 'read_group_day', 'read_group_items', 'save_group_drafts', 'search_group_history', 'send_message_to_user', 'submit_group_events'], 'history': 1}"
     },
     {
       "kind": "system",
@@ -109,15 +109,15 @@
     },
     {
       "kind": "system",
-      "name": "后台维护生成话题摘要与成员印象",
+      "name": "后台通读经宿主模型生成当天目录，并记录缓存命中量",
       "pass": true,
-      "detail": "episodes=1 profiles=3"
+      "detail": "day_views=1 cached_tokens=64"
     },
     {
       "kind": "system",
-      "name": "宿主 agent 调用 get_group_episodes 取到话题摘要",
+      "name": "@ 的提示先放当天目录，get_group_episodes 取到当天话题",
       "pass": true,
-      "detail": "今天主要聊了：沙盒话题：中午大家吃什么？"
+      "detail": "今天主要聊了：沙盒话题（进行中）：沙盒要点：中午大家吃什么？"
     },
     {
       "kind": "system",
@@ -205,18 +205,18 @@
     }
   ],
   "observations": {
-    "sample_answer": "目前能确认的是：\n• 产品评审｜已确认。负责人：老张；时间：2026-10-12T10:00:00+08:00；原因：数据还没齐 [1] [2] [3]\n\n依据：\n[1] 09-28 15:34 老张：可以（消息 1003）\n[2] 09-28 15:34 小林：建议产品评审放在10月9日下午3点，老张负责，大家看看（消息 1002）\n[3] 09-28 15:34 老张：产品评审改到10月12日上午10点，数据还没齐（消息 1006）\n\n反馈：/反馈 37af8c651556 类型",
+    "sample_answer": "目前能确认的是：\n• 产品评审｜已确认。负责人：老张；时间：2026-10-12T10:00:00+08:00；原因：数据还没齐 [1] [2] [3]\n\n依据：\n[1] 09-28 19:48 老张：可以（消息 1003）\n[2] 09-28 19:48 小林：建议产品评审放在10月9日下午3点，老张负责，大家看看（消息 1002）\n[3] 09-28 19:48 老张：产品评审改到10月12日上午10点，数据还没齐（消息 1006）\n\n反馈：/反馈 d02aca357855 类型",
     "at_answer": "收到，评审是老张负责。",
     "sid_replies": [
       "未识别的命令。输入 /秘书帮助 查看用法。",
       "UMO: 「sandbox-qq:GroupMessage:123456」\nUID: 「90001」\n*Use UMO to set whitelist and"
     ],
-    "seconds_until_failed_during_outage": 46,
-    "failed_message_after_recovery": "failed",
+    "seconds_until_failed_during_outage": 150,
+    "failed_message_after_recovery": "gated",
     "message_status": {
       "dialogue": 4,
-      "done": 19,
-      "failed": 1
+      "done": 18,
+      "gated": 2
     },
     "model_usage": [
       {
@@ -226,43 +226,37 @@
         "errors": 0
       },
       {
-        "role": "episode",
-        "calls": 4,
-        "seconds": 0.0,
+        "role": "extract",
+        "calls": 6,
+        "seconds": 0.1,
         "errors": 0
       },
       {
-        "role": "extract",
-        "calls": 10,
-        "seconds": 45.2,
-        "errors": 3
-      },
-      {
-        "role": "profile",
+        "role": "reading",
         "calls": 4,
         "seconds": 0.0,
         "errors": 0
       }
     ],
     "reply_latency_seconds": [
-      0.01,
+      0.02,
       0.06,
-      0.13,
-      0.05,
       0.04,
       0.05,
       0.05,
       0.05,
+      0.05,
+      0.05,
       0.01,
       0.01,
-      0.03,
-      0.03,
+      0.01,
+      0.02,
       0.01,
       0.01,
-      0.03,
       0.01,
-      0.06
+      0.01,
+      0.02
     ]
   },
-  "finished": "2026-09-28T15:37:14"
+  "finished": "2026-09-28T19:52:58"
 }

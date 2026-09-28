@@ -99,6 +99,38 @@ class Store:
           updated_at TEXT, PRIMARY KEY(group_key,sender));
         PRAGMA user_version=3;
         """)
+        # v4: whole-day reading and long-term anchors. Derived rows cite message
+        # seqs ("m" lists) so a removed message takes its derived text with it.
+        self.conn.executescript("""
+        CREATE TABLE IF NOT EXISTS day_views(
+          group_key TEXT, day TEXT, sidebar TEXT, first_seq INTEGER, last_seq INTEGER,
+          passes INTEGER DEFAULT 0, updated_at TEXT, PRIMARY KEY(group_key,day));
+        CREATE TABLE IF NOT EXISTS anchor_topics(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, group_key TEXT, title TEXT, aliases TEXT,
+          status TEXT, importance INTEGER, first_day TEXT, last_day TEXT, days_seen INTEGER,
+          sources TEXT, updated_at TEXT);
+        CREATE INDEX IF NOT EXISTS anchor_topic_group ON anchor_topics(group_key,last_day);
+        CREATE TABLE IF NOT EXISTS anchor_facts(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, group_key TEXT, topic_id INTEGER, kind TEXT,
+          statement TEXT, day TEXT, invalid_day TEXT DEFAULT '', superseded_by INTEGER DEFAULT 0,
+          uncertain INTEGER DEFAULT 0, sources TEXT, at TEXT);
+        CREATE INDEX IF NOT EXISTS anchor_fact_topic ON anchor_facts(group_key,topic_id);
+        CREATE TABLE IF NOT EXISTS digests(
+          group_key TEXT, level TEXT, period TEXT, qa TEXT, sources TEXT, at TEXT,
+          PRIMARY KEY(group_key,level,period));
+        CREATE TABLE IF NOT EXISTS lexicon(
+          group_key TEXT, term TEXT, meaning TEXT, sources TEXT, updated_at TEXT,
+          PRIMARY KEY(group_key,term));
+        PRAGMA user_version=4;
+        """)
+        if "sources" not in {
+            r["name"] for r in self.conn.execute("PRAGMA table_info(profiles)")
+        }:
+            self.conn.execute("ALTER TABLE profiles ADD COLUMN sources TEXT DEFAULT '[]'")
+        if "cached_tokens" not in {
+            r["name"] for r in self.conn.execute("PRAGMA table_info(usage)")
+        }:
+            self.conn.execute("ALTER TABLE usage ADD COLUMN cached_tokens INTEGER")
         self.fts = True
         try:
             existing = self.one("SELECT 1 FROM sqlite_master WHERE name='message_fts'")
@@ -434,12 +466,14 @@ class Store:
 
     def _purge(self, db, group, ids, actor, action, freeze_native=True):
         ids = set(ids)
+        seqs = set()
         for uid in ids:
             m = self.one(
                 "SELECT * FROM messages WHERE group_key=? AND uid=?", (group, uid)
             )
             if not m:
                 continue
+            seqs.add(m["seq"])
             for token in ["uid:" + uid, "fp:" + m["fingerprint"]] + (
                 ["native:" + digest(m["native_id"])]
                 if m["native_id"] and freeze_native
@@ -478,6 +512,8 @@ class Store:
                     "DELETE FROM profiles WHERE group_key=? AND sender=?",
                     (group, p["sender"]),
                 )
+        if seqs:
+            self._purge_derived(db, group, seqs)
         # Remove generated text conservatively: it may paraphrase removed evidence.
         db.execute("DELETE FROM answers WHERE group_key=?", (group,))
         db.execute("DELETE FROM feedback WHERE group_key=?", (group,))
@@ -495,6 +531,91 @@ class Store:
             "INSERT OR REPLACE INTO metadata VALUES(?,?)",
             ("revocation:" + group, utcnow()),
         )
+
+    def _purge_derived(self, db, group, seqs):
+        """Drop every v4 derived entry that cites one of the removed message seqs.
+
+        Day views and daily digests lose only the points and answers citing them;
+        week and month digests are deleted and rebuilt from the daily ones. A fact
+        that superseded an older one hands the topic back to that older fact,
+        marked uncertain.
+        """
+
+        def hit(value):
+            return bool(seqs.intersection(value if isinstance(value, list) else []))
+
+        lo, hi = min(seqs), max(seqs)
+        for v in self.rows(
+            "SELECT day,sidebar FROM day_views WHERE group_key=? AND first_seq<=? AND last_seq>=?",
+            (group, hi, lo),
+        ):
+            side = json.loads(v["sidebar"])
+            topics = []
+            for t in side.get("topics", []):
+                points = [p for p in t.get("points", []) if not hit(p.get("m"))]
+                if points:
+                    topics.append(dict(t, points=points))
+            side["topics"] = topics
+            for part in ("terms", "feedback"):
+                side[part] = [x for x in side.get(part, []) if not hit(x.get("m"))]
+            db.execute(
+                "UPDATE day_views SET sidebar=? WHERE group_key=? AND day=?",
+                (encode(side), group, v["day"]),
+            )
+        for d in self.rows(
+            "SELECT level,period,qa,sources FROM digests WHERE group_key=?", (group,)
+        ):
+            if not hit(json.loads(d["sources"])):
+                continue
+            qa = [a for a in json.loads(d["qa"]) if not hit(a.get("m"))]
+            # A daily row stays, even empty, as the marker that the day was consolidated.
+            if d["level"] != "day":
+                db.execute(
+                    "DELETE FROM digests WHERE group_key=? AND level=? AND period=?",
+                    (group, d["level"], d["period"]),
+                )
+                continue
+            db.execute(
+                "UPDATE digests SET qa=?,sources=? WHERE group_key=? AND level=? AND period=?",
+                (
+                    encode(qa),
+                    encode(sorted({n for a in qa for n in a.get("m", [])})),
+                    group,
+                    d["level"],
+                    d["period"],
+                ),
+            )
+        for f in self.rows(
+            "SELECT id,sources FROM anchor_facts WHERE group_key=?", (group,)
+        ):
+            if hit(json.loads(f["sources"])):
+                db.execute("DELETE FROM anchor_facts WHERE id=?", (f["id"],))
+                db.execute(
+                    "UPDATE anchor_facts SET superseded_by=0,invalid_day='',uncertain=1 WHERE superseded_by=?",
+                    (f["id"],),
+                )
+        for t in self.rows(
+            "SELECT id,sources FROM anchor_topics WHERE group_key=?", (group,)
+        ):
+            sources = json.loads(t["sources"])
+            if not hit(sources):
+                continue
+            if self.one("SELECT 1 FROM anchor_facts WHERE topic_id=?", (t["id"],)):
+                db.execute(
+                    "UPDATE anchor_topics SET sources=? WHERE id=?",
+                    (encode([n for n in sources if n not in seqs]), t["id"]),
+                )
+            else:
+                db.execute("DELETE FROM anchor_topics WHERE id=?", (t["id"],))
+        for table, key in (("lexicon", "term"), ("profiles", "sender")):
+            for r in self.rows(
+                f"SELECT {key},sources FROM {table} WHERE group_key=?", (group,)
+            ):
+                if hit(json.loads(r["sources"] or "[]")):
+                    db.execute(
+                        f"DELETE FROM {table} WHERE group_key=? AND {key}=?",
+                        (group, r[key]),
+                    )
 
     def supersede_revision(self, group, native_id, new_uid):
         with self.tx() as db:
@@ -590,18 +711,24 @@ class Store:
                 "DELETE FROM profiles WHERE group_key=? AND updated_at<?",
                 (group, cutoff),
             )
+            for table in ("day_views", "digests"):
+                db.execute(
+                    f"DELETE FROM {table} WHERE group_key=? AND {'updated_at' if table == 'day_views' else 'at'}<?",
+                    (group, cutoff),
+                )
         return len(ids)
 
     def log_usage(self, group, role, model, tokens, seconds, error):
         with self.tx() as db:
             db.execute(
-                "INSERT INTO usage(group_key,role,model,prompt_tokens,completion_tokens,seconds,error,at) VALUES(?,?,?,?,?,?,?,?)",
+                "INSERT INTO usage(group_key,role,model,prompt_tokens,completion_tokens,cached_tokens,seconds,error,at) VALUES(?,?,?,?,?,?,?,?,?)",
                 (
                     group,
                     role,
                     model,
                     tokens.get("prompt_tokens"),
                     tokens.get("completion_tokens"),
+                    tokens.get("cached_tokens"),
                     seconds,
                     error,
                     utcnow(),
