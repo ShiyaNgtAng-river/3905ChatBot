@@ -668,6 +668,8 @@ class Dialogue:
             sources={},
             used_sources=set(),
             finished=False,
+            reported_ops=0,
+            reported_errors=0,
             model_label="astrbot-agent",
         )
 
@@ -780,8 +782,6 @@ class Dialogue:
             JSON string with the tool result or an error the model can act on.
         """
         try:
-            if s["finished"]:
-                raise ValueError("本轮对话已结束")
             if s["tool_count"] >= 12:
                 raise ValueError("本轮工具调用次数已用完，请直接回答")
             self._check_revision(s)
@@ -794,24 +794,28 @@ class Dialogue:
         return encode(result)
 
     def native_finish(self, s, text):
-        """Append a program-generated receipt and record the host agent's answer.
+        """Append receipts for new writes and record what the host agent sent.
+
+        The host may send several messages in one turn (text before a tool call,
+        then the answer), so this runs once per message: each receipt covers only
+        writes not reported yet, and the answer row accumulates every message.
 
         Args:
             s: State from native_state.
-            text: Final model text shown to the group.
+            text: Model text about to be shown to the group.
 
         Returns:
             Text to send. Only real tool results produce a receipt.
         """
-        if s["finished"]:
-            return text
-        s["finished"] = True
         receipt = []
-        for op in s["operations"]:
+        for op in s["operations"][s["reported_ops"] :]:
             state = "已记录" if op["status"] == "recorded" else "已提交，等确认人确认"
             receipt.append(f"「{op['title']}」{state}")
-        if s["write_errors"] and not s["operations"] and not s["drafts"]:
-            receipt.append("没有写入事项：" + s["write_errors"][-1])
+        s["reported_ops"] = len(s["operations"])
+        errors = s["write_errors"][s["reported_errors"] :]
+        s["reported_errors"] = len(s["write_errors"])
+        if errors and not s["operations"] and not s["drafts"]:
+            receipt.append("没有写入事项：" + errors[-1])
         if receipt:
             text += "\n（" + "；".join(receipt) + "）"
         m, key = s["m"], s["key"]
@@ -819,10 +823,32 @@ class Dialogue:
             return text
         if s["revision"] != self.store.get_meta("revocation:" + key):
             return text
-        with self.store.tx() as db:
-            db.execute(
-                "UPDATE messages SET status='done',error='' WHERE uid=?", (m["uid"],)
+        if s["finished"]:
+            previous = self.store.one(
+                "SELECT output FROM answers WHERE id=?", (s["answer_id"],)
             )
+            with self.store.tx() as db:
+                db.execute(
+                    "UPDATE answers SET output=?,sources=?,item_ids=?,trace=? WHERE id=?",
+                    (
+                        ((previous["output"] + "\n") if previous else "") + text,
+                        encode(list(s["used_sources"])),
+                        encode(list({op["item_id"] for op in s["operations"]})),
+                        encode(
+                            {
+                                "prompt_version": "native-1.1",
+                                "draft_ids": [d["id"] for d in s["drafts"]],
+                                "operations": s["operations"],
+                            }
+                        ),
+                        s["answer_id"],
+                    ),
+                )
+            return text
+        s["finished"] = True
+        # Message status is left to store.commit: marking it done here would make
+        # a later submit in the same turn a no-op.
+        with self.store.tx() as db:
             db.execute(
                 "INSERT INTO answers(id,group_key,actor,at,question,output,sources,item_ids,mode,trace) VALUES(?,?,?,?,?,?,?,?,?,?)",
                 (
@@ -837,7 +863,7 @@ class Dialogue:
                     "native",
                     encode(
                         {
-                            "prompt_version": "native-1.0",
+                            "prompt_version": "native-1.1",
                             "draft_ids": [d["id"] for d in s["drafts"]],
                             "operations": s["operations"],
                         }
