@@ -8,7 +8,7 @@ from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.star import Context, Star, StarTools
 
 from .secretary.config import Config
-from .secretary.dialogue import tidy_reply
+from .secretary.dialogue import only_filler, tidy_reply
 from .secretary.engine import Engine
 from .secretary.types import Actor, Message, utcnow
 from .secretary.web import AuditServer
@@ -214,6 +214,14 @@ class GroupSecretary(Star):
             )
         ) or text in {"这条记住", "/记住", "这个已经过时了", "已经过时了"}
         wake = bool(getattr(event, "is_at_or_wake_command", False))
+        # "/" is also a wake prefix; other bots' commands in the group are not for us.
+        at_me = any(
+            c.__class__.__name__ == "At"
+            and str(getattr(c, "qq", "")) == str(event.get_self_id())
+            for c in components
+        )
+        if text.startswith("/") and not explicit and not at_me:
+            wake = False
         # Natural-language mentions go to the host agent (persona, subagents, web
         # search); this plugin supplies group context and validated tools.
         native = (
@@ -459,7 +467,14 @@ class GroupSecretary(Star):
         if not plains:
             return
         flags = []
-        text = tidy_reply("".join(c.text for c in plains), flags)
+        raw = "".join(c.text for c in plains)
+        if only_filler(raw) and not state["operations"][state["reported_ops"] :]:
+            # "我查一下～" before a tool call says nothing; send the answer only.
+            flags = state["style_flags"]
+            flags["filler_dropped"] = flags.get("filler_dropped", 0) + 1
+            result.chain[:] = [c for c in result.chain if c.__class__.__name__ != "Plain"]
+            return
+        text = tidy_reply(raw, flags)
         plains[0].text = self.engine.conversation.native_finish(state, text, flags)
         result.chain[:] = [
             c for c in result.chain if c.__class__.__name__ != "Plain" or c is plains[0]

@@ -239,13 +239,56 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         t = self.e.store.one("SELECT * FROM anchor_topics WHERE id=?", (topic,))
         self.assertEqual((t["days_seen"], t["last_day"]), (2, "2026-10-06"))
         brief = self.r.brief("demo", "爬山几点集合", at(7, 9).astimezone(timezone.utc).isoformat())
-        self.assertIn("周末爬山（进行中，改过1次）", brief)
+        self.assertIn("周末爬山（进行中，改过1次，也叫团建）", brief)
         self.assertIn("改到周日早上八点", brief)
         line = self.r.timeline(self.state("爬山怎么定的", when=at(7, 9)), "爬山")
         states = [f["state"] for f in line[0]["facts"]]
         self.assertEqual(states[0], "已被新的说法取代（10-06）")
         self.assertIn("当前有效", states)
         self.assertIn("老张", line[0]["facts"][0]["evidence"][0])
+
+    async def test_versions_in_one_day_chain_and_overlong_facts_are_refused(self):
+        s = await self.first_day()
+        self.model(
+            {
+                "qa": [],
+                "ops": [
+                    {"op": "topic", "ref": "new1", "title": "比赛规则", "aliases": ["神仙胡杯规则"], "m": [s[0]]},
+                    {"op": "fact", "ref": "nf1", "topic": "new1", "kind": "fact", "text": "规则v4发布", "m": [s[0]]},
+                    {"op": "fact", "ref": "nf2", "topic": "new1", "kind": "fact", "text": "规则v5发布", "supersedes": "nf1", "m": [s[1]]},
+                    {"op": "fact", "topic": "new1", "kind": "fact", "text": "很长" * 70, "m": [s[1]]},
+                ],
+            }
+        )
+        await self.r.consolidate_day("demo", "2026-10-05", at(6, 5))
+        facts = self.e.store.rows("SELECT statement,superseded_by FROM anchor_facts ORDER BY id")
+        self.assertEqual([f["statement"] for f in facts], ["规则v4发布", "规则v5发布"])
+        self.assertTrue(facts[0]["superseded_by"])
+        self.assertEqual(json.loads(self.e.store.one("SELECT aliases FROM anchor_topics")["aliases"]), ["神仙胡杯规则"])
+
+    async def test_memory_tools_carry_dates_and_related_topics(self):
+        s = await self.first_day()
+        await self.consolidate_first_day(s)
+        st = self.state("团建怎么定的", when=at(6, 9))
+        line = json.loads(self.e.conversation.native_tool(st, "timeline", {"query": "团建"}))
+        self.assertEqual(line["context"]["today"], "2026-10-06")
+        self.assertEqual(line["context"]["records"], "2026-10-05 至 2026-10-06")
+        self.assertEqual(line["context"]["related_topics"][0]["also_called"], ["团建"])
+        self.assertEqual(line["results"][0]["topic"], "周末爬山")
+        self.model()
+        empty = json.loads(await self.e.conversation.native_tool_async(st, "read_day", {"when": "09-24", "question": "几点"}))
+        self.assertIn("本群记录覆盖 2026-10-05 至 2026-10-06", empty["answer"])
+
+    async def test_questions_to_the_bot_are_marked_not_evidence(self):
+        await self.say("lin", "小林", "周六去爬山吧", at(5, 9))
+        st = self.state("听说爬山改到周日了？", sender="yu", when=at(5, 10))
+        await self.say("owner", "老张", "没改", at(5, 11))
+        text, _ = self.r.transcript("demo", "2026-10-05", self.r.rows("demo", "2026-10-05"))
+        self.assertIn("老张 @助手] 听说爬山改到周日了？", text)
+        later = self.state("爬山", when=at(5, 12))
+        found = self.e.recall.search(later, query="改到周日")["messages"]
+        self.assertTrue(any(x.get("asked_bot") for x in found))
+        self.assertIsNotNone(st)
 
     async def test_removed_evidence_takes_derived_memory_with_it(self):
         s = await self.first_day()
@@ -397,6 +440,7 @@ class GateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.say("午饭吃啥"), "gated")
         self.assertEqual(await self.say("哈哈哈"), "gated")
         self.assertEqual(await self.say("可以"), "gated")  # nothing awaits a confirmation
+        self.assertEqual(await self.say("今晚睡觉先存一千块钱"), "gated")  # a relative time alone
         self.assertEqual(await self.say("周日早上九点爬山"), "done")
         self.assertEqual(await self.say("我负责订大巴"), "done")
         self.assertEqual(await self.say("那就这样", reply_to="g4"), "done")
