@@ -119,4 +119,59 @@ class MemoryDatasetTest(unittest.TestCase):
         self.assertEqual(ev.per_thousand(v2['usage'], len(records))['cache_hit_rate'], 0.0)
 
 
+
+def load_tool(name):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(name, Path(lab.__file__).parent / 'tools' / f'{name}.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class HardDatasetTest(unittest.TestCase):
+    def test_traps_are_said_but_never_current_and_recalls_point_back(self):
+        hard = load_tool('memory_hard')
+        rows, oracle = hard.build(SimpleNamespace(seed=11, days=7, per_day=150))
+        again, _ = hard.build(SimpleNamespace(seed=11, days=7, per_day=150))
+        self.assertEqual(rows, again)
+        said = ' '.join(r['text'] for r in rows)
+        final = oracle[-1]
+        self.assertTrue(final['states'])
+        for state in final['states']:
+            self.assertTrue(state['traps'])
+            for trap in state['traps']:
+                self.assertIn(trap, said)
+                self.assertNotIn(trap, state['current'])
+        self.assertTrue(any(a['trap'] for a in final['answered'] + final['assignments']))
+        ids = set()
+        for r in rows:
+            if r.get('kind') == 'recall':
+                self.assertIn(r['target_id'], ids)
+            ids.add(r['native_id'])
+
+    def test_rewrite_keeps_values_or_falls_back_to_the_original(self):
+        hard = load_tool('memory_hard')
+        rows = [{'name': '老张', 'text': '那就先定周六早上8点，东门集合'}, {'name': '小林', 'text': '中午吃啥'}]
+
+        async def complete(self, system, payload, role, group, **kw):
+            return json.dumps({'lines': ['那就周六8点吧', '中午干饭吃啥']}, ensure_ascii=False)
+
+        with patch.dict('os.environ', {'GROUPBOT_MODEL_API_KEY': 'test'}), patch.object(OpenAICompatible, 'complete', complete):
+            changed, kept = asyncio.run(hard.rewrite(rows, Path(lab.__file__).parent / 'config' / 'deepseek.json'))
+        self.assertEqual((changed, kept), (1, 1))
+        self.assertEqual([r['text'] for r in rows], ['那就先定周六早上8点，东门集合', '中午干饭吃啥'])
+
+    def test_fake_replay_scores_traps_and_topic_merging(self):
+        hard, ev = load_tool('memory_hard'), load_tool('eval_memory')
+        rows, oracle = hard.build(SimpleNamespace(seed=5, days=4, per_day=120))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'messages.jsonl'
+            path.write_text(''.join(json.dumps(r, ensure_ascii=False) + '\n' for r in rows), encoding='utf-8')
+            records = sorted(lab.load_records(path), key=lambda m: m.at)
+            result = asyncio.run(ev.replay(SimpleNamespace(fake=True), records, oracle, baseline=False))
+        self.assertEqual(result['failures'], {})
+        self.assertIn('traps_resisted', result['summary'])
+        self.assertIn('anchor_one_topic_each', result['summary'])
+
+
 if __name__=='__main__': unittest.main()
