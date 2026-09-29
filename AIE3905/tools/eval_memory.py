@@ -211,9 +211,19 @@ def score_v2(e, entry, at):
         found = rank(state["key"] + " " + state["topic"], topics, r.label)[:2]
         return [f["statement"] for t in found for f in r.facts(KEY, t["id"])]
 
-    current, clean, history, brief = [], [], [], []
+    current, clean, history, brief, traps, merged = [], [], [], [], [], []
+    live = [t for t in topics if t["status"] != "archived"]
     for st in entry["states"]:
         facts = anchor(st)
+        # Jokes, hypotheticals, rumors, forwarded old records, recalled typos.
+        for trap in st.get("traps", []):
+            traps.append(not any(has(f, trap) and not all(has(f, c) for c in st["current"]) for f in facts))
+        names = [st["key"], *st.get("aliases", [])]
+        holders = [
+            t for t in live
+            if any(n in r.label(t) or any(n in f["statement"] for f in r.facts(KEY, t["id"])) for n in names)
+        ]
+        merged.append(len(holders) == 1)
         text = " ".join(facts)
         current.append("取消" in text if st["cancelled"] else all(has(text, v) for v in st["current"]))
         if st["obsolete"]:
@@ -238,11 +248,25 @@ def score_v2(e, entry, at):
             "SELECT statement FROM anchor_facts WHERE group_key=? AND kind='question' AND superseded_by=0", (KEY,)
         )
     )
+    for a in entry["answered"]:
+        if a.get("trap"):
+            now_true = [f["statement"] for f in store.rows(
+                "SELECT statement FROM anchor_facts WHERE group_key=? AND superseded_by=0 AND invalid_day=''", (KEY,))]
+            traps.append(not any(has(f, a["trap"]) and not has(f, a["key"]) for f in now_true))
+    side = json.loads(view["sidebar"]) if view else {"topics": []}
+    aliases = {st["key"]: [st["key"], *st.get("aliases", [])] for st in entry["states"]}
+    one_topic = [
+        sum(any(n in json.dumps(t, ensure_ascii=False) for n in aliases.get(k, [k])) for t in side["topics"]) == 1
+        for k in entry.get("merge_keys", [])
+    ]
     return {
         "day_topics": ratio([has(day_text, k) for k in entry["topics"]]),
         "day_decisions": ratio([all(has(day_text, v) for v in d["keys"]) for d in entry["decisions"]]),
+        "day_one_topic_each": ratio(one_topic),
         "state_current": ratio(current),
         "state_no_stale": ratio(clean),
+        "traps_resisted": ratio(traps),
+        "anchor_one_topic_each": ratio(merged),
         "history_kept": ratio(history),
         "reply_sees_current": ratio(brief),
         "terms": ratio([t["key"] in words.get(t["term"], "") for t in entry["terms"]]),
@@ -267,10 +291,12 @@ def score_baseline(e, entry, at):
     everything = " ".join(r["summary"] for r in store.rows("SELECT summary FROM episodes WHERE group_key=?", (KEY,)))
     newest = " ".join(r["summary"] for r in recall.episodes(KEY, until=at, limit=3))  # what the prompt gets
     notes = {p["name"]: p["summary"] for p in store.rows("SELECT name,summary FROM profiles WHERE group_key=?", (KEY,))}
-    current, clean, history, brief = [], [], [], []
+    current, clean, history, brief, traps = [], [], [], [], []
     for st in entry["states"]:
         found = recall.episodes(KEY, st["key"] + " " + st["topic"], until=at, limit=5)
         first = found[0]["summary"] if found else ""
+        for trap in st.get("traps", []):
+            traps.append(not (has(first, trap) and not all(has(first, c) for c in st["current"])))
         current.append("取消" in first if st["cancelled"] else all(has(first, v) for v in st["current"]))
         if st["obsolete"]:
             clean.append(not (any(has(first, o) for o in st["obsolete"]) and not all(has(first, c) for c in st["current"])))
@@ -282,6 +308,7 @@ def score_baseline(e, entry, at):
         "day_decisions": ratio([all(has(day_text, v) for v in d["keys"]) for d in entry["decisions"]]),
         "state_current": ratio(current),
         "state_no_stale": ratio(clean),
+        "traps_resisted": ratio(traps),
         "history_kept": ratio(history),
         "reply_sees_current": ratio(brief),
         "terms": ratio([t["term"] in everything and t["key"] in everything for t in entry["terms"]]),

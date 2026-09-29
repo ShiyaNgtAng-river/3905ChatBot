@@ -179,7 +179,7 @@ class Sandbox:
                            'proactive': False, 'report_time': '', 'platform_id': 'sandbox-qq', 'native_group_id': str(GROUP)}],
                'web': {'enabled': False},
                'models': {'understanding': {'provider_id': 'sandbox-model'}, 'answering': {'provider_id': 'sandbox-model'}},
-               'dialogue': {'frontend': self.args.frontend},
+               'dialogue': {'frontend': self.args.frontend, 'fast_provider': 'sandbox-model', 'deep_provider': 'sandbox-model'},
                # Near-immediate reading passes so the memory loop reads the day during the run.
                'memory': {'read_new_chars': 1, 'read_idle_minutes': 0.05, 'read_min_minutes': 0.05,
                           'start_delay_seconds': 1}}
