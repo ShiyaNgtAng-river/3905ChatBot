@@ -1,0 +1,4 @@
+[
+  {"sender":"lin","native_id":"source","text":"这次虚构测试的口令是蓝色纸鹤。","expect":{"reply_count":0}},
+  {"sender":"owner","native_id":"question","text":"刚才的测试口令是什么？只回答口令。","at":true,"expect":{"contains":["蓝色纸鹤"]}}
+]
