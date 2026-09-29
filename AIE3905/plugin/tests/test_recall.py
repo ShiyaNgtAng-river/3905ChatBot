@@ -51,6 +51,8 @@ class ParseRangeTests(unittest.TestCase):
         self.assertEqual(self.local_days("12月3号"), ("12-03 00:00", "12-03 23:59"))
         self.assertEqual(self.local_days("2026-10-03"), ("10-03 00:00", "10-03 23:59"))
         self.assertEqual(self.local_days("上个月"), ("09-01 00:00", "09-30 23:59"))
+        for phrase in ("10-03", "10.3", "10/03", "10月3", "2026.10.3", "2026年10月3日"):
+            self.assertEqual(self.local_days(phrase), ("10-03 00:00", "10-03 23:59"), phrase)
 
     def test_unknown_or_invalid_phrases_are_not_guessed(self):
         self.assertIsNone(self.local_days("那天"))

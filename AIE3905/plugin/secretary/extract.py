@@ -54,17 +54,19 @@ scope 是 series 或 occurrence；“这次/这周”只影响 occurrence，必�
 
 
 # The gate: only messages that may carry a formal event reach the model. Schedule,
-# decision and assignment words, times and dates, replies to recorded messages,
+# decision and assignment words, clock times and dates, replies to recorded messages,
 # or a short confirmation while something awaits one. The day reading pass still
 # reads everything else.
-EVENTFUL = re.compile(
+DECISION = re.compile(
     r"定|改|换到|取消|推迟|延期|延后|提前|确认|安排|计划|负责|分工|交给|我来|报名|参加|缺席|"
     r"请假|来不了|去不了|到不了|不来了|不去了|开会|会议|集合|碰头|见面|截止|提交|上交|"
-    r"deadline|ddl|预约|预订|订|发布|上线|时间|几点|地点|在哪|哪里|今天|明天|后天|今晚|"
-    r"明晚|早上|上午|中午|下午|晚上|周[一二三四五六日天末]|星期|礼拜|下周|这周|本周|月底|"
-    r"\d{1,2}[:：点]|[一二三四五六七八九十两]{1,3}点|\d{1,2}[月号日]|[一二三四五六七八九十]{1,3}[月号日]|"
-    r"记住|过时|采用|方案",
+    r"deadline|ddl|预约|预订|订|发布|上线|几点|地点|在哪|记住|过时|采用|方案",
     re.I,
+)
+# A clock time or a date counts on its own; "今晚", "周六" and the like only
+# together with a decision word ("今晚睡觉先存一千块钱" is not an arrangement).
+CLOCK = re.compile(
+    r"\d{1,2}[:：点]|[一二三四五六七八九十两]{1,3}点|\d{1,2}[月号日]|[一二三四五六七八九十]{1,3}[月号日]"
 )
 CONFIRM = re.compile(
     r"(那就|那|就)?(可以|行|好的?|好滴|ok|同意|没问题|这样|这么定|按这个来?|收到|嗯嗯?|对|确定)"
@@ -74,7 +76,7 @@ CONFIRM = re.compile(
 
 
 def worth_extracting(m, reply, known, states, store, group) -> bool:
-    """Decide whether a message may carry a formal event (see EVENTFUL).
+    """Decide whether a message may carry a formal event (see DECISION, CLOCK).
 
     Args:
         m: Stored message row.
@@ -90,7 +92,7 @@ def worth_extracting(m, reply, known, states, store, group) -> bool:
     text = (m["text"] or "").strip()
     if not text:
         return False
-    if EVENTFUL.search(text):
+    if DECISION.search(text) or CLOCK.search(text):
         return True
     if reply and any(e["message_uid"] == reply["uid"] for e in known):
         return True

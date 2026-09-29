@@ -43,7 +43,7 @@ def parse_range(text, anchor, tz):
     """Turn a Chinese time phrase into an inclusive UTC [since, until] range.
 
     Args:
-        text: Phrase such as 今天, 昨天, 上周, 这个月, 最近3天, 10月3日, 2026-10-03.
+        text: Phrase such as 今天, 昨天, 上周, 这个月, 最近3天, 10月3日, 09-24, 9.24, 2026-10-03.
         anchor: ISO time the phrase is relative to, normally the request time.
         tz: Group timezone name.
 
@@ -79,7 +79,8 @@ def parse_range(text, anchor, tz):
             span = n * {"天": 1, "周": 7, "个月": 30}[m[2]]
             start, days = today - timedelta(days=span - 1), span
     elif m := re.fullmatch(
-        r"(\d{4})-(\d{1,2})-(\d{1,2})|(\d{1,2})月(\d{1,2})[日号]", text
+        r"(\d{4})[-./年](\d{1,2})[-./月](\d{1,2})[日号]?|(\d{1,2})(?:月|[-./])(\d{1,2})[日号]?",
+        text,
     ):
         try:
             if m[1]:
@@ -363,6 +364,7 @@ class Recall:
             s["used_sources"].add(r["uid"])
             found.append(
                 {
+                    **({"asked_bot": True} if r.get("route") == "dialogue" else {}),
                     "uid": r["uid"],
                     "at": clock(r["at"]),
                     "name": r["name"] or "群成员",

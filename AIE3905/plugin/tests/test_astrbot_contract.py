@@ -20,6 +20,11 @@ class Plain:
         self.text = text
 
 
+class At:
+    def __init__(self, qq):
+        self.qq = qq
+
+
 class MessageChain:
     def __init__(self):
         self.text = ""
@@ -35,8 +40,9 @@ class Context:
 
 
 class Event:
-    def __init__(self, text, mid="one", wake=False, group="123", sender="owner"):
+    def __init__(self, text, mid="one", wake=False, group="123", sender="owner", at_self=False):
         self.text = text
+        self.at_self = at_self
         self.group = group
         self.sender = sender
         self.sent = []
@@ -69,7 +75,7 @@ class Event:
         return self.text
 
     def get_messages(self):
-        return [Plain(self.text)]
+        return ([At("bot")] if self.at_self else []) + [Plain(self.text)]
 
     def should_call_llm(self, value):
         self.default_llm = value
@@ -483,6 +489,29 @@ class NativeFrontendTests(PluginHarness):
         for i, text in enumerate(["帮我调研一下这家公司", "分析一下这个月的情况", "帮我查一下这个技术"]):
             ev = await self.mention(text, f"p3{i}")
             self.assertEqual(ev.get_extra("selected_provider"), "deep-model")
+
+    async def test_other_bots_commands_are_stored_but_not_answered(self):
+        other = Event("/bili 123", mid="b1", wake=True)  # "/" is a wake prefix too
+        await self.plugin.observe(other)
+        self.assertFalse(self.plugin.reply_tasks)
+        self.assertEqual(other.sent, [])
+        self.assertTrue(self.plugin.engine.store.message("demo", "b1"))
+        mine = Event("/bili 123", mid="b2", wake=True, at_self=True)
+        await self.plugin.observe(mine)
+        await asyncio.gather(*list(self.plugin.reply_tasks))
+        self.assertIn("未识别的命令", mine.sent[0])
+
+    async def test_lookup_filler_alone_is_not_sent(self):
+        ev = await self.mention("规则改了几版", "f1")
+        await self.plugin.inject_group_context(ev, Request(["search_group_history"]))
+        ev.result = Result("这个得翻翻群里的记录，我查一下～")
+        ev.get_result = lambda: ev.result
+        await self.plugin.finish_group_turn(ev)
+        self.assertFalse([c for c in ev.result.chain if isinstance(c, Plain)])
+        self.assertEqual(ev.get_extra("groupsecretary_turn")["style_flags"], {"filler_dropped": 1})
+        ev.result = Result("查到了，一共两版。")
+        await self.plugin.finish_group_turn(ev)
+        self.assertEqual(ev.result.chain[0].text, "查到了，一共两版。")
 
     async def test_service_phrases_are_trimmed_and_counted_not_hidden(self):
         from contract_plugin.secretary.dialogue import tidy_reply
