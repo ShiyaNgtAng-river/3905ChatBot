@@ -71,6 +71,8 @@ class Config:
         self.read_max_chars = memory.get("read_max_chars", 250000)
         self.consolidate_time = memory.get("consolidate_time", "04:00")
         self.long_timeout = memory.get("timeout_seconds", 180)
+        # End-of-day consolidation may run on a reasoning model: allow it longer.
+        self.consolidate_timeout = memory.get("consolidate_timeout_seconds", 420)
         self.gate = memory.get("gate", True)
         self.anchor_chars = memory.get("anchor_chars", 1500)
         self.day_chars = memory.get("day_chars", 900)
@@ -87,6 +89,7 @@ class Config:
             self.read_min_minutes,
             self.read_max_chars,
             self.long_timeout,
+            self.consolidate_timeout,
             self.anchor_chars,
             self.day_chars,
             self.half_life,

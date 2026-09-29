@@ -141,13 +141,21 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([t["title"] for t in view["topics"]], ["周末爬山"])
         self.assertEqual(view["topics"][0]["points"], [{"text": "老张定了周六早上八点东门集合", "m": [s[1]]}])
         self.assertEqual(view["terms"][0]["term"], "老地方")
-        self.model("不是 JSON", {"topics": []})
-        with self.assertRaises(Exception):
+        self.model("不是 JSON", "还是不行", {"topics": []})
+        with self.assertRaises(ValueError):  # asked twice, both malformed
             await self.r.read_pass("demo", "2026-10-05", at(5, 11))
         with self.assertRaises(ValueError):  # an empty view never replaces a good one
             await self.r.read_pass("demo", "2026-10-05", at(5, 11))
         again = json.loads(self.e.store.one("SELECT sidebar FROM day_views")["sidebar"])
         self.assertEqual(again, view)
+
+    async def test_malformed_json_is_asked_again_once(self):
+        await self.say("lin", "小林", "周六去爬山吧", at(5, 9))
+        good = {"topics": [{"id": "t1", "title": "爬山", "points": [{"text": "周六爬山", "m": [1]}]}]}
+        provider = self.model('{"topics":[{"title":"爬山"说好了}]}', good)
+        self.assertEqual(await self.r.read_pass("demo", "2026-10-05", at(5, 10)), "2026-10-05")
+        self.assertEqual(len(provider.calls), 2)
+        self.assertIn("不是合法 JSON", provider.calls[1][1])
 
     async def test_removal_during_the_call_discards_the_pass(self):
         await self.say("lin", "小林", "周六去爬山吧", at(5, 9))

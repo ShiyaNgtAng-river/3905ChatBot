@@ -42,7 +42,7 @@ SYSTEM = """你是群聊的记录员，通读一个群一整天的聊天记录�
 你写下的每个要点、答案和操作，都要在 m 里列出依据的消息编号（1–8 个整数），编号必须出现在记录里。
 阅读时带着下面这些问题（由群里有经验的人拟定）：
 {questions}
-具体任务写在记录后面；只输出任务要求的 JSON。"""
+具体任务写在记录后面；只输出任务要求的合法 JSON：字符串里不要用英文双引号，引用原话用「」。"""
 
 READ_TASK = """
 上一版当天目录（沿用其中的话题编号，可以改名、合并或新增话题）：
@@ -358,7 +358,8 @@ class Reader:
             questions=self.numbered(),
         )
         revision = self.store.get_meta("revocation:" + key)
-        raw = await self.reading.complete(
+        obj = await self.ask(
+            self.reading,
             self.system,
             text + tail,
             "reading",
@@ -366,7 +367,7 @@ class Reader:
             timeout=cfg.long_timeout,
             max_tokens=4000,
         )
-        side = self.sidebar(json_object(raw), seqs, previous)
+        side = self.sidebar(obj, seqs, previous)
         if not side["topics"] and previous.get("topics"):
             raise ValueError("新目录为空，保留上一版")
         if self.changed(key, revision, rows):
@@ -387,6 +388,22 @@ class Reader:
                 ),
             )
         return day
+
+    @staticmethod
+    async def ask(provider, system, payload, role, key, **kw):
+        """One model call parsed as a JSON object; a malformed reply is asked again once.
+
+        Host providers have no JSON mode, so a stray quote in Chinese text can
+        break an otherwise good answer.
+        """
+        raw = await provider.complete(system, payload, role, key, **kw)
+        try:
+            return json_object(raw)
+        except ValueError:
+            if not isinstance(payload, str):
+                raise
+            again = payload + "\n（上一次的输出不是合法 JSON。请重新输出完整、合法的 JSON，字符串里的引号用「」。）"
+            return json_object(await provider.complete(system, again, role, key, **kw))
 
     def changed(self, key, revision, rows):
         """True when a message used by a model call was removed during it."""
@@ -549,15 +566,15 @@ class Reader:
             questions=self.numbered(),
         )
         revision = self.store.get_meta("revocation:" + key)
-        raw = await self.consolidating.complete(
+        obj = await self.ask(
+            self.consolidating,
             self.system,
             text + tail,
             "consolidating",
             key,
-            timeout=cfg.long_timeout,
+            timeout=cfg.consolidate_timeout,
             max_tokens=6000,
         )
-        obj = json_object(raw)
         if not isinstance(obj.get("qa", []), list) or not isinstance(
             obj.get("ops", []), list
         ):
