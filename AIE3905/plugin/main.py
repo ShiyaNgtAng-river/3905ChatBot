@@ -255,6 +255,13 @@ class GroupSecretary(Star):
                     actor, g.key, row, ephemeral=saved is None
                 ),
             )
+            # Everyday mentions run on the fast model; only research-style requests
+            # pay for the slower reasoning model.
+            cfg = self.engine.config
+            deep = any(w in text for w in cfg.deep_keywords)
+            provider = cfg.deep_provider if deep else cfg.fast_provider
+            if provider:
+                event.set_extra("selected_provider", provider)
             # Only this turn re-enables the host chain; it replaces our own reply.
             event.should_call_llm(False)
             return

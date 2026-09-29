@@ -39,8 +39,16 @@ class Config:
         self.frontend = dialogue.get("frontend", "astrbot")
         if self.frontend not in {"astrbot", "plugin"}:
             raise ValueError("dialogue.frontend 必须是 astrbot 或 plugin")
-        # Words that switch a mention to a researched, structured answer.
-        self.deep_keywords = dialogue.get("deep_keywords", ["仔细", "深入", "详细"])
+        # Words that switch a mention to a researched, structured answer, and to
+        # deep_provider when one is configured; other mentions use fast_provider.
+        self.deep_keywords = dialogue.get(
+            "deep_keywords",
+            ["仔细", "深入", "详细", "调研", "研究", "分析", "查一下", "对比", "评估", "总结"],
+        )
+        self.fast_provider = dialogue.get("fast_provider", "")
+        self.deep_provider = dialogue.get("deep_provider", "")
+        if not all(isinstance(x, str) for x in (self.fast_provider, self.deep_provider)):
+            raise ValueError("dialogue.fast_provider/deep_provider 必须是宿主 Provider ID")
         if not isinstance(self.deep_keywords, list) or not all(
             isinstance(w, str) and 1 <= len(w) <= 10 for w in self.deep_keywords
         ):

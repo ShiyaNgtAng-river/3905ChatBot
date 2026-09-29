@@ -6,7 +6,9 @@
   "dialogue": {
     "enabled": true,
     "frontend": "astrbot",
-    "context_messages": 40
+    "context_messages": 40,
+    "fast_provider": "REPLACE_WITH_FAST_PROVIDER_ID",
+    "deep_provider": "REPLACE_WITH_REASONING_PROVIDER_ID"
   },
   "memory": {
     "reading": true,

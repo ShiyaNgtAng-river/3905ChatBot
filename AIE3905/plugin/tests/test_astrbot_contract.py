@@ -473,6 +473,17 @@ class NativeFrontendTests(PluginHarness):
         req, _ = await self.turn(daily, "随便。")
         self.assertNotIn("当前消息里有", req.system_prompt)
 
+    async def test_only_research_requests_use_the_slow_model(self):
+        cfg = self.plugin.engine.config
+        daily = await self.mention("今天吃什么", "p1")
+        self.assertIsNone(daily.get_extra("selected_provider"))  # host default when unset
+        cfg.fast_provider, cfg.deep_provider = "fast-model", "deep-model"
+        daily = await self.mention("今天吃什么", "p2")
+        self.assertEqual(daily.get_extra("selected_provider"), "fast-model")
+        for i, text in enumerate(["帮我调研一下这家公司", "分析一下这个月的情况", "帮我查一下这个技术"]):
+            ev = await self.mention(text, f"p3{i}")
+            self.assertEqual(ev.get_extra("selected_provider"), "deep-model")
+
     async def test_service_phrases_are_trimmed_and_counted_not_hidden(self):
         from contract_plugin.secretary.dialogue import tidy_reply
 
