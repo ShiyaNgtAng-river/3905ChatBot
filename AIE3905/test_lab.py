@@ -115,7 +115,7 @@ class MemoryDatasetTest(unittest.TestCase):
         self.assertEqual((v2['failures'], base['failures']), ({}, {}))
         self.assertIn('reading', {r['role'] for r in v2['usage']})
         self.assertIn('episode', {r['role'] for r in base['usage']})
-        self.assertEqual(v2['summary']['abstains'], 1.0)
+        self.assertEqual(v2['summary']['declines_unknown'], 1.0)
         self.assertEqual(ev.per_thousand(v2['usage'], len(records))['cache_hit_rate'], 0.0)
 
 
@@ -161,7 +161,7 @@ class HardDatasetTest(unittest.TestCase):
         self.assertEqual((changed, kept), (1, 1))
         self.assertEqual([r['text'] for r in rows], ['那就先定周六早上8点，东门集合', '中午干饭吃啥'])
 
-    def test_fake_replay_scores_traps_and_topic_merging(self):
+    def test_fake_replay_scores_answers_on_traps_and_names(self):
         hard, ev = load_tool('memory_hard'), load_tool('eval_memory')
         rows, oracle = hard.build(SimpleNamespace(seed=5, days=4, per_day=120))
         with tempfile.TemporaryDirectory() as tmp:
@@ -170,8 +170,8 @@ class HardDatasetTest(unittest.TestCase):
             records = sorted(lab.load_records(path), key=lambda m: m.at)
             result = asyncio.run(ev.replay(SimpleNamespace(fake=True), records, oracle, baseline=False))
         self.assertEqual(result['failures'], {})
-        self.assertIn('traps_resisted', result['summary'])
-        self.assertIn('anchor_one_topic_each', result['summary'])
+        self.assertIn('stale_resisted', result['summary'])
+        self.assertIn('identity', result['summary'])
 
 
 if __name__=='__main__': unittest.main()
