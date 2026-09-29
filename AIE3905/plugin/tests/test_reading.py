@@ -172,18 +172,19 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         self.model(
             {
                 "qa": [
-                    {"q": 3, "answer": "老张定了周六早上八点东门集合爬山", "m": [s[1]]},
-                    {"q": 6, "answer": "无", "m": []},
-                    {"q": 5, "answer": "没有依据的回答", "m": [424242]},
+                    {"q": 2, "answer": "老张定了周六早上八点东门集合爬山", "m": [s[1]]},
+                    {"q": 5, "answer": "无", "m": []},
+                    {"q": 4, "answer": "没有依据的回答", "m": [424242]},
                 ],
                 "ops": [
-                    {"op": "topic", "ref": "new1", "title": "周末爬山", "aliases": ["团建"], "importance": 4, "m": [s[0]]},
-                    {"op": "fact", "topic": "new1", "kind": "decision", "text": "周六早上八点东门集合爬山", "m": [s[1]]},
-                    {"op": "fact", "topic": "new1", "kind": "question", "text": "谁带急救包？", "m": [s[2]]},
+                    {"op": "topic", "ref": "new1", "title": "周末爬山", "importance": 5, "aliases": ["团建"], "m": [s[0]]},
+                    {"op": "record", "topic": "new1", "text": "10-05 09:05 老张定了周六早上八点东门集合爬山", "m": [s[1]]},
+                    {"op": "record", "topic": "new1", "text": "10-05 09:10 小余问谁带急救包，当时没人回", "m": [s[2]]},
                     {"op": "person", "name": "老张", "text": "常负责定时间和地点", "m": [s[1]]},
-                    {"op": "term", "term": "老地方", "meaning": "学校东门", "m": [s[2]]},
-                    {"op": "fact", "topic": "a999", "kind": "fact", "text": "不存在的话题", "m": [s[0]]},
-                    {"op": "fact", "topic": "new1", "kind": "fact", "text": "没有依据"},
+                    {"op": "term", "term": "老地方", "meaning": "小余说指学校东门", "m": [s[2]]},
+                    {"op": "record", "topic": "a999", "text": "不存在的话题", "m": [s[0]]},
+                    {"op": "record", "topic": "new1", "text": "没有依据"},
+                    {"op": "record", "topic": "new1", "text": "太长" * 70, "m": [s[1]]},
                 ],
             }
         )
@@ -191,19 +192,18 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.r.due_consolidation("demo", at(6, 5)), "2026-10-05")
         self.assertEqual(await self.r.consolidate("demo", at(6, 5)), "2026-10-05")
 
-    async def test_consolidation_builds_anchors_digest_member_note_and_term(self):
+    async def test_consolidation_only_organizes_and_records(self):
         s = await self.first_day()
         await self.consolidate_first_day(s)
-        topics = self.e.store.rows("SELECT * FROM anchor_topics")
-        self.assertEqual([(t["title"], t["importance"]) for t in topics], [("周末爬山", 4)])
+        topics = self.e.store.rows("SELECT title,aliases,importance FROM anchor_topics")
+        self.assertEqual(topics, [{"title": "周末爬山", "aliases": "[]", "importance": 0}])  # no verdicts kept
         facts = self.e.store.rows("SELECT kind,statement FROM anchor_facts ORDER BY id")
-        self.assertEqual([f["kind"] for f in facts], ["decision", "question"])
+        self.assertEqual([f["kind"] for f in facts], ["record", "record"])
         qa = json.loads(self.e.store.one("SELECT qa FROM digests WHERE level='day'")["qa"])
-        self.assertEqual([a["q"] for a in qa], [3])
+        self.assertEqual([a["q"] for a in qa], [2])
         note = self.e.store.one("SELECT summary,sources FROM profiles WHERE sender='owner'")
-        self.assertEqual(note["summary"], "常负责定时间和地点")
-        self.assertEqual(json.loads(note["sources"]), [s[1]])
-        self.assertEqual(self.e.store.one("SELECT meaning FROM lexicon")["meaning"], "学校东门")
+        self.assertEqual((note["summary"], json.loads(note["sources"])), ("常负责定时间和地点", [s[1]]))
+        self.assertEqual(self.e.store.one("SELECT meaning FROM lexicon")["meaning"], "小余说指学校东门")
         self.assertIsNone(self.r.due_consolidation("demo", at(6, 5)))
 
     async def second_day(self, s):
@@ -214,74 +214,67 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         self.model({"topics": []})
         await self.r.read_pass("demo", "2026-10-06", at(6, 21))
         topic = self.e.store.one("SELECT id FROM anchor_topics")["id"]
-        decision, question = [f["id"] for f in self.e.store.rows("SELECT id FROM anchor_facts ORDER BY id")]
+        first = self.e.store.one("SELECT id FROM anchor_facts ORDER BY id")["id"]
         self.model(
             lambda payload: {
-                "qa": [{"q": 4, "answer": "爬山从周六改到周日", "m": [s2[0]]}],
+                "qa": [{"q": 3, "answer": "爬山从周六改到周日", "m": [s2[0]]}],
                 "ops": [
                     {"op": "topic", "ref": f"a{topic}", "title": "周末爬山", "m": [s2[0]]},
-                    {"op": "topic", "ref": "new1", "title": "聚餐", "m": [s2[1]]},
-                    {"op": "fact", "topic": "new1", "kind": "decision", "text": "越权推翻", "supersedes": f"f{decision}", "m": [s2[1]]},
-                    {"op": "fact", "topic": f"a{topic}", "kind": "decision", "text": "改到周日早上八点东门集合爬山", "supersedes": f"f{decision}", "m": [s2[0]]},
-                    {"op": "resolve", "fact": f"f{question}", "text": "小余带急救包", "m": [s2[1]]},
+                    # An older prompt's verdict fields are ignored, not obeyed.
+                    {"op": "fact", "topic": f"a{topic}", "kind": "decision", "supersedes": f"f{first}",
+                     "text": "10-06 20:00 老张说因下雨改到周日早上八点", "m": [s2[0]]},
+                    {"op": "record", "topic": f"a{topic}", "text": "10-06 20:05 小余说急救包他带", "m": [s2[1]]},
                 ],
             }
-            if f"f{decision} 决定：周六早上八点东门集合爬山" in payload
+            if "10-05 老张定了周六早上八点东门集合爬山" in payload.replace("10-05 09:05 ", "")
             else {"qa": [], "ops": []}
         )
         self.assertEqual(await self.r.consolidate("demo", at(7, 5)), "2026-10-06")
-        return s2, topic, decision
+        return s2, topic
 
-    async def test_new_facts_supersede_old_ones_within_a_topic_only(self):
+    async def test_changes_are_kept_in_time_order_and_nothing_is_hidden(self):
         s = await self.first_day()
         await self.consolidate_first_day(s)
-        s2, topic, decision = await self.second_day(s)
-        old = self.e.store.one("SELECT * FROM anchor_facts WHERE id=?", (decision,))
-        self.assertEqual(old["invalid_day"], "2026-10-06")
-        current = self.r.facts("demo", topic)
-        self.assertEqual(
-            [(f["kind"], f["statement"]) for f in current],
-            [("decision", "改到周日早上八点东门集合爬山"), ("answer", "小余带急救包")],
-        )
-        self.assertNotIn("越权推翻", json.dumps(self.e.store.rows("SELECT statement FROM anchor_facts"), ensure_ascii=False))
+        s2, topic = await self.second_day(s)
+        texts = [f["statement"] for f in self.r.facts("demo", topic)]
+        self.assertEqual(len(texts), 4)
+        self.assertLess(texts.index("10-05 09:05 老张定了周六早上八点东门集合爬山"), texts.index("10-06 20:00 老张说因下雨改到周日早上八点"))
+        self.assertEqual(self.e.store.rows("SELECT 1 FROM anchor_facts WHERE superseded_by!=0"), [])
         t = self.e.store.one("SELECT * FROM anchor_topics WHERE id=?", (topic,))
         self.assertEqual((t["days_seen"], t["last_day"]), (2, "2026-10-06"))
         brief = self.r.brief("demo", "爬山几点集合", at(7, 9).astimezone(timezone.utc).isoformat())
-        self.assertIn("周末爬山（进行中，改过1次，也叫团建）", brief)
-        self.assertIn("改到周日早上八点", brief)
+        self.assertIn("按时间排列，后面的更新", brief)
+        self.assertLess(brief.index("周六早上八点"), brief.index("改到周日早上八点"))
         line = self.r.timeline(self.state("爬山怎么定的", when=at(7, 9)), "爬山")
-        states = [f["state"] for f in line[0]["facts"]]
-        self.assertEqual(states[0], "已被新的说法取代（10-06）")
-        self.assertIn("当前有效", states)
-        self.assertIn("老张", line[0]["facts"][0]["evidence"][0])
+        self.assertEqual([r["day"] for r in line[0]["records"]], ["2026-10-05", "2026-10-05", "2026-10-06", "2026-10-06"])
+        self.assertIn("老张", line[0]["records"][0]["evidence"][0])
 
-    async def test_versions_in_one_day_chain_and_overlong_facts_are_refused(self):
+    async def test_other_names_are_found_through_records(self):
         s = await self.first_day()
         self.model(
             {
                 "qa": [],
                 "ops": [
-                    {"op": "topic", "ref": "new1", "title": "比赛规则", "aliases": ["神仙胡杯规则"], "m": [s[0]]},
-                    {"op": "fact", "ref": "nf1", "topic": "new1", "kind": "fact", "text": "规则v4发布", "m": [s[0]]},
-                    {"op": "fact", "ref": "nf2", "topic": "new1", "kind": "fact", "text": "规则v5发布", "supersedes": "nf1", "m": [s[1]]},
-                    {"op": "fact", "topic": "new1", "kind": "fact", "text": "很长" * 70, "m": [s[1]]},
+                    {"op": "topic", "ref": "new1", "title": "LGU杯", "m": [s[0]]},
+                    {"op": "record", "topic": "new1", "text": "10-05 老张的公告写作「LGU杯（神仙胡杯）正式开赛」", "m": [s[1]]},
                 ],
             }
         )
         await self.r.consolidate_day("demo", "2026-10-05", at(6, 5))
-        facts = self.e.store.rows("SELECT statement,superseded_by FROM anchor_facts ORDER BY id")
-        self.assertEqual([f["statement"] for f in facts], ["规则v4发布", "规则v5发布"])
-        self.assertTrue(facts[0]["superseded_by"])
-        self.assertEqual(json.loads(self.e.store.one("SELECT aliases FROM anchor_topics")["aliases"]), ["神仙胡杯规则"])
+        st = self.state("神仙胡杯", when=at(6, 9))
+        line = self.r.timeline(st, "神仙胡杯什么时候开赛")
+        self.assertEqual(line[0]["topic"], "LGU杯")
 
-    async def test_memory_tools_carry_dates_and_related_topics(self):
+    async def test_memory_tools_carry_dates_and_related_records(self):
         s = await self.first_day()
         await self.consolidate_first_day(s)
-        st = self.state("团建怎么定的", when=at(6, 9))
-        line = json.loads(self.e.conversation.native_tool(st, "timeline", {"query": "团建"}))
+        st = self.state("爬山怎么定的", when=at(6, 9))
+        line = json.loads(self.e.conversation.native_tool(st, "timeline", {"query": "爬山"}))
         self.assertEqual(line["context"]["today"], "2026-10-06")
         self.assertEqual(line["context"]["records"], "2026-10-05 至 2026-10-06")
-        self.assertEqual(line["context"]["related_topics"][0]["also_called"], ["团建"])
+        related = line["context"]["related_topics"][0]
+        self.assertEqual(related["topic"], "周末爬山")
+        self.assertIn("2026-10-05 10-05 09:05 老张定了周六早上八点东门集合爬山", related["records"])
         self.assertEqual(line["results"][0]["topic"], "周末爬山")
         self.model()
         empty = json.loads(await self.e.conversation.native_tool_async(st, "read_day", {"when": "09-24", "question": "几点"}))
@@ -301,13 +294,11 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
     async def test_removed_evidence_takes_derived_memory_with_it(self):
         s = await self.first_day()
         await self.consolidate_first_day(s)
-        s2, topic, decision = await self.second_day(s)
+        s2, topic = await self.second_day(s)
         self.e.store.recall("demo", "n6")  # 周六下雨，改到周日
-        old = self.e.store.one("SELECT * FROM anchor_facts WHERE id=?", (decision,))
-        self.assertEqual((old["superseded_by"], old["invalid_day"], old["uncertain"]), (0, "", 1))
-        self.assertNotIn("周日", json.dumps(self.e.store.rows("SELECT statement FROM anchor_facts"), ensure_ascii=False))
-        brief = self.r.brief("demo", "爬山", at(7, 9).astimezone(timezone.utc).isoformat())
-        self.assertIn("依据被撤回，可能已变", brief)
+        texts = [f["statement"] for f in self.r.facts("demo", topic)]
+        self.assertNotIn("10-06 20:00 老张说因下雨改到周日早上八点", texts)
+        self.assertIn("10-05 09:05 老张定了周六早上八点东门集合爬山", texts)
         digest = self.e.store.one("SELECT qa FROM digests WHERE period='2026-10-06'")
         self.assertEqual(json.loads(digest["qa"]), [])  # row stays as the consolidated marker
         self.e.store.recall("demo", "n3")  # 谁带急救包？老地方见
@@ -317,7 +308,7 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         self.e.store.optout("demo", "owner")
         self.assertIsNone(self.e.store.one("SELECT 1 FROM profiles WHERE sender='owner'"))
         left = self.e.store.rows("SELECT statement FROM anchor_facts WHERE topic_id=?", (topic,))
-        self.assertEqual(left, [{"statement": "小余带急救包"}])
+        self.assertEqual(left, [{"statement": "10-06 20:05 小余说急救包他带"}])
 
     async def test_native_prompt_puts_memory_first(self):
         s = await self.first_day()
@@ -325,7 +316,7 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         st = self.state("周六爬山几点", when=at(5, 12))
         prompt = self.e.conversation.native_prompt(st, "老张")
         self.assertTrue(prompt.startswith("<group_memory>\n今天群里的话题"))
-        self.assertIn("- 周末爬山（09:00–09:10，已定）：老张定了周六早上八点东门集合", prompt)
+        self.assertIn("- 周末爬山（09:00–09:10）：老张定了周六早上八点东门集合", prompt)
         self.assertLess(prompt.index("</group_memory>"), prompt.index("<group_chat>"))
 
     async def test_brief_respects_budgets_and_prefers_relevant_topics(self):
@@ -379,15 +370,10 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
     async def test_quiet_topics_turn_dormant_then_archive(self):
         s = await self.first_day()
         await self.consolidate_first_day(s)
-        with self.e.store.tx() as db:
-            self.r.tidy(db, "demo", "2026-10-13")
-        self.assertEqual(self.e.store.one("SELECT status FROM anchor_topics")["status"], "dormant")
-        with self.e.store.tx() as db:
-            self.r.tidy(db, "demo", "2026-11-20")  # importance 4 survives 30 days
-        self.assertEqual(self.e.store.one("SELECT status FROM anchor_topics")["status"], "dormant")
-        with self.e.store.tx() as db:
-            self.r.tidy(db, "demo", "2027-01-10")
-        self.assertEqual(self.e.store.one("SELECT status FROM anchor_topics")["status"], "archived")
+        for day, status in (("2026-10-13", "dormant"), ("2026-11-05", "archived")):
+            with self.e.store.tx() as db:
+                self.r.tidy(db, "demo", day)
+            self.assertEqual(self.e.store.one("SELECT status FROM anchor_topics")["status"], status)
         self.assertEqual(self.r.brief("demo", "爬山", at(5, 12).isoformat()).count("周末爬山"), 1)  # day view only
 
     async def test_retention_removes_views_digests_and_anchors(self):
