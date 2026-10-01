@@ -340,6 +340,7 @@ class GroupSecretary(Star):
             + "\n"
             + self.engine.conversation.native_prompt(state, event.get_sender_name())
         )
+        state["system_prompt"] = req.system_prompt
         # A configured subagent owns its tools so the router cannot bypass it.
         for handoff, prefixes in DELEGATED.items():
             if handoff in names:
@@ -449,6 +450,47 @@ class GroupSecretary(Star):
             events(array[object]): 事件列表，每个为 {kind:confirm/propose/change/cancel/complete/correct/participant/note/outdated, draft_id:采用草案时填, title:事项名称, fields:{when,time_raw,owner,location,reason,note}, target:已知事件id, scope:series}
         """
         return self._group_tool(event, "submit_events", {"events": events})
+
+    @filter.on_llm_response()
+    async def retry_empty_answer(self, event: AstrMessageEvent, resp):
+        """Answer once more when the host agent's final reply is empty or only filler.
+
+        The host calls this for the main agent's last response, before it is sent.
+        A model that says "let me check" and stops without a tool call would
+        otherwise leave the asker with nothing, since the filler is dropped.
+        """
+        state = event.get_extra(STATE_KEY)
+        if not state or not self.engine or state["operations"]:
+            return
+        text = getattr(resp, "completion_text", "") or ""
+        if text.strip() and not only_filler(text):
+            return
+        flags = state["style_flags"]
+        flags["empty_retry"] = flags.get("empty_retry", 0) + 1
+        answer = ""
+        try:
+            provider = event.get_extra(
+                "selected_provider"
+            ) or await self.context.get_current_chat_provider_id(
+                event.unified_msg_origin
+            )
+            result = await asyncio.wait_for(
+                self.context.llm_generate(
+                    chat_provider_id=provider,
+                    system_prompt=state.get("system_prompt", ""),
+                    prompt=self.engine.conversation.native_retry_prompt(state),
+                ),
+                timeout=60,
+            )
+            answer = (result.completion_text or "").strip()
+        except Exception as exc:
+            self.logger.warning(
+                "Group secretary retry after an empty answer failed (%s).",
+                type(exc).__name__,
+            )
+        if not answer or only_filler(answer):
+            answer = "这次没整理出答案，麻烦再@我问一次～"
+        resp.completion_text = answer
 
     @filter.on_decorating_result()
     async def finish_group_turn(self, event: AstrMessageEvent):
