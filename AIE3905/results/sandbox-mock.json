@@ -1,8 +1,9 @@
 {
   "model": "mock",
   "model_id": "mock-model",
-  "astrbot_tag": "v4.28.1",
-  "started": "2026-09-28T03:16:24",
+  "astrbot_tag": "local v4.28.1",
+  "frontend": "astrbot",
+  "started": "2026-09-29T12:51:43",
   "checks": [
     {
       "kind": "system",
@@ -14,7 +15,7 @@
       "kind": "system",
       "name": "普通消息入库、不回复",
       "pass": true,
-      "detail": "status=done replies=0"
+      "detail": "status=gated replies=0"
     },
     {
       "kind": "model",
@@ -62,13 +63,61 @@
       "kind": "model",
       "name": "/问 回答给出新时间并附依据",
       "pass": true,
-      "detail": "目前能确认的是：\n• 产品评审｜已确认。负责人：老张；时间：2026-10-12T10:00:00+08:00；原因：数据还没齐 [1] [2] [3]\n\n依据：\n[1] 09-28 11:17 老张：可以（消息 1003）\n[2] 09-28 11:17 小林：建议产品评审放在10月9日下午3点，老张负责，大家看看（消息 1002）\n[3] 09-28 11:17 老张：产品评审改到10月12日"
+      "detail": "目前能确认的是：\n• 产品评审｜已确认。负责人：老张；时间：2026-10-12T10:00:00+08:00；原因：数据还没齐 [1] [2] [3]\n\n依据：\n[1] 09-29 12:51 老张：可以（消息 1003）\n[2] 09-29 12:51 小林：建议产品评审放在10月9日下午3点，老张负责，大家看看（消息 1002）\n[3] 09-29 12:51 老张：产品评审改到10月12日"
     },
     {
       "kind": "system",
       "name": "@机器人提问只收到一条回复",
       "pass": true,
       "detail": "replies=1"
+    },
+    {
+      "kind": "system",
+      "name": "@ 由宿主 agent 回答：带群聊上下文、群记工具，且不带宿主旧历史",
+      "pass": true,
+      "detail": "{'tools': ['future_task', 'get_group_episodes', 'get_member_profile', 'get_topic_timeline', 'read_group_day', 'read_group_items', 'save_group_drafts', 'search_group_history', 'send_message_to_user', 'submit_group_events'], 'history': 1}"
+    },
+    {
+      "kind": "system",
+      "name": "回复去掉 Markdown 并记为 native 回答",
+      "pass": true,
+      "detail": "收到，评审是老张负责。"
+    },
+    {
+      "kind": "system",
+      "name": "宿主 agent 调用 search_group_history 查到原话",
+      "pass": true,
+      "detail": "我翻了下记录：中午大家吃什么？"
+    },
+    {
+      "kind": "system",
+      "name": "save_group_drafts 经宿主工具链保存草案，回复单条",
+      "pass": true,
+      "detail": "drafts=1 reply=方案1：评审后周五晚上七点，先作为建议。"
+    },
+    {
+      "kind": "system",
+      "name": "确认人自然确认 → 正式记录并附程序回执",
+      "pass": true,
+      "detail": "好，定了。\n（「聚餐」已记录）"
+    },
+    {
+      "kind": "system",
+      "name": "非确认人自然确认 → 只进入待确认",
+      "pass": true,
+      "detail": "好，定了。\n（「周会」已提交，等确认人确认）"
+    },
+    {
+      "kind": "system",
+      "name": "后台通读经宿主模型生成当天目录，并记录缓存命中量",
+      "pass": true,
+      "detail": "day_views=1 cached_tokens=64"
+    },
+    {
+      "kind": "system",
+      "name": "@ 的提示先放当天目录，get_group_episodes 取到当天话题",
+      "pass": true,
+      "detail": "今天主要聊了：沙盒话题：沙盒要点：中午大家吃什么？"
     },
     {
       "kind": "system",
@@ -138,6 +187,12 @@
     },
     {
       "kind": "system",
+      "name": "配置群内没有不带群记上下文的默认 AI 回复",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "kind": "system",
       "name": "重启后状态保留、无重复事件",
       "pass": true,
       "detail": ""
@@ -150,45 +205,57 @@
     }
   ],
   "observations": {
-    "sample_answer": "目前能确认的是：\n• 产品评审｜已确认。负责人：老张；时间：2026-10-12T10:00:00+08:00；原因：数据还没齐 [1] [2] [3]\n\n依据：\n[1] 09-28 11:17 老张：可以（消息 1003）\n[2] 09-28 11:17 小林：建议产品评审放在10月9日下午3点，老张负责，大家看看（消息 1002）\n[3] 09-28 11:17 老张：产品评审改到10月12日上午10点，数据还没齐（消息 1006）\n\n反馈：/反馈 2db667ff980a 类型",
-    "at_answer": "目前能确认的是：\n• 产品评审｜已确认。负责人：老张；时间：2026-10-12T10:00:00+08:00；原因：数据还没齐 [1] [2] [3]\n\n依据：\n[1] 09-28 11:17 老张：可以（消息 1003）\n[2] 09-28 11:17 小林：建议产品评审放在10月9日下午3点，老张负责，大家看看（消息 1002）\n[3] 09-28 11:17 老张：产品评审改到10月12日上午10点，数据还没齐（消息 1006）\n\n反馈：/反馈 d05086a5bf87 类型",
+    "sample_answer": "目前能确认的是：\n• 产品评审｜已确认。负责人：老张；时间：2026-10-12T10:00:00+08:00；原因：数据还没齐 [1] [2] [3]\n\n依据：\n[1] 09-29 12:51 老张：可以（消息 1003）\n[2] 09-29 12:51 小林：建议产品评审放在10月9日下午3点，老张负责，大家看看（消息 1002）\n[3] 09-29 12:51 老张：产品评审改到10月12日上午10点，数据还没齐（消息 1006）\n\n覆盖提示：截至提问时有 1 条消息未形成可靠的结构化记录（含普通闲聊、附件或失败记录），本答案不代表已理解全部讨论。\n\n反馈：/反馈 0b7a60c2aa64 类型",
+    "at_answer": "收到，评审是老张负责。",
     "sid_replies": [
-      "未识别的命令。输入 /秘书帮助 查看用法。",
       "UMO: 「sandbox-qq:GroupMessage:123456」\nUID: 「90001」\n*Use UMO to set whitelist and"
     ],
-    "seconds_until_failed_during_outage": 65,
-    "failed_message_after_recovery": "failed",
+    "seconds_until_failed_during_outage": 151,
+    "failed_message_after_recovery": "gated",
     "message_status": {
+      "dialogue": 4,
       "done": 17,
-      "failed": 1
+      "gated": 3
     },
     "model_usage": [
       {
         "role": "answer_select",
-        "calls": 3,
+        "calls": 2,
         "seconds": 0.0,
         "errors": 0
       },
       {
         "role": "extract",
-        "calls": 11,
-        "seconds": 64.9,
-        "errors": 3
+        "calls": 5,
+        "seconds": 0.1,
+        "errors": 0
+      },
+      {
+        "role": "reading",
+        "calls": 4,
+        "seconds": 0.1,
+        "errors": 0
       }
     ],
     "reply_latency_seconds": [
       0.02,
+      0.06,
+      0.05,
       0.04,
+      0.05,
+      0.05,
+      0.05,
+      0.05,
       0.01,
       0.01,
       0.01,
       0.02,
       0.01,
       0.01,
+      0.02,
       0.01,
-      0.01,
-      0.08
+      0.02
     ]
   },
-  "finished": "2026-09-28T03:19:24"
+  "finished": "2026-09-29T12:56:01"
 }

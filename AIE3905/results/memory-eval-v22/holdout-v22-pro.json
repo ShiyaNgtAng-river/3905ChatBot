@@ -1,0 +1,135 @@
+{
+  "dataset": {
+    "generator": "groupbot-hard-1",
+    "seed": 23,
+    "days": 4,
+    "per_day": 1200,
+    "messages": 4800,
+    "recalls": 3,
+    "traps": 25,
+    "rewritten": false,
+    "group": "eval",
+    "timezone": "Asia/Shanghai",
+    "messages_sha256": "23de3fba794539000d727410e1e8698470c74429165295cfffc944d4266ebc6c",
+    "note": "全为虚构数据；标准答案只在 oracle.json。"
+  },
+  "days_evaluated": 4,
+  "messages": 4800,
+  "call_bound": 146,
+  "plugin": "v2.2",
+  "models": {
+    "source": "host",
+    "consolidating": "strong"
+  },
+  "memory": {
+    "days": [
+      {
+        "day": "2026-06-01",
+        "day_topics": 1.0,
+        "state_current": 1.0,
+        "stale_resisted": 1.0,
+        "identity": 1.0,
+        "owner": 1.0,
+        "open_found": null,
+        "answered_not_listed": 1.0,
+        "declines_unknown": 1.0,
+        "answer_seconds": 0.552,
+        "injected_chars": 5628.25
+      },
+      {
+        "day": "2026-06-02",
+        "day_topics": 1.0,
+        "state_current": 1.0,
+        "stale_resisted": 1.0,
+        "identity": 1.0,
+        "owner": 1.0,
+        "open_found": null,
+        "answered_not_listed": 1.0,
+        "declines_unknown": 1.0,
+        "answer_seconds": 0.597,
+        "injected_chars": 6315.875
+      },
+      {
+        "day": "2026-06-03",
+        "day_topics": 1.0,
+        "state_current": 1.0,
+        "stale_resisted": 1.0,
+        "identity": 1.0,
+        "owner": 1.0,
+        "open_found": null,
+        "answered_not_listed": 1.0,
+        "declines_unknown": 1.0,
+        "answer_seconds": 0.689,
+        "injected_chars": 7074.562
+      },
+      {
+        "day": "2026-06-04",
+        "day_topics": 1.0,
+        "state_current": 1.0,
+        "stale_resisted": 1.0,
+        "identity": 1.0,
+        "owner": 1.0,
+        "open_found": null,
+        "answered_not_listed": 1.0,
+        "declines_unknown": 1.0,
+        "answer_seconds": 0.686,
+        "injected_chars": 9268.375
+      }
+    ],
+    "summary": {
+      "answer_seconds": 0.631,
+      "answered_not_listed": 1.0,
+      "day_topics": 1.0,
+      "declines_unknown": 1.0,
+      "identity": 1.0,
+      "injected_chars": 7071.765,
+      "open_found": null,
+      "owner": 1.0,
+      "stale_resisted": 1.0,
+      "state_current": 1.0
+    },
+    "usage": [
+      {
+        "role": "answer",
+        "model": "deepseek-flash",
+        "calls": 64,
+        "prompt_tokens": 318339,
+        "cached_tokens": 151680,
+        "completion_tokens": 812,
+        "seconds": 40.4
+      },
+      {
+        "role": "consolidating",
+        "model": "deepseek-v4-pro",
+        "calls": 4,
+        "prompt_tokens": 95237,
+        "cached_tokens": 1536,
+        "completion_tokens": 36993,
+        "seconds": 327.2
+      },
+      {
+        "role": "reading",
+        "model": "deepseek-flash",
+        "calls": 70,
+        "prompt_tokens": 1054360,
+        "cached_tokens": 821120,
+        "completion_tokens": 201490,
+        "seconds": 589.4
+      }
+    ],
+    "failures": {
+      "reading": 3,
+      "types": {
+        "JSONDecodeError": 3
+      }
+    },
+    "per_1k_messages": {
+      "calls": 15.4,
+      "uncached_prompt_tokens": 68113,
+      "cached_prompt_tokens": 171387,
+      "completion_tokens": 49684,
+      "cache_hit_rate": 0.716
+    }
+  },
+  "limits": "问题和标准答案来自模拟群聊，按固定格式由程序比对，不等于人工语义评分；模拟群聊比真实群聊规整；正式事项提取用规则，不计入成本；回答模型只看到回复时会注入的记忆和工具结果。"
+}

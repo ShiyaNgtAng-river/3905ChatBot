@@ -1,0 +1,9 @@
+{
+  "host_process_stage": "real installed source",
+  "platform_send": "synthetic capture; no QQ transmission",
+  "managed_group_default_agent_calls": 0,
+  "managed_group_plugin_messages": 1,
+  "replay_messages": 0,
+  "unmanaged_group_default_agent_calls": 1,
+  "passed": true
+}

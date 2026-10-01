@@ -1,0 +1,14 @@
+{
+  "generator": "groupbot-hard-1",
+  "seed": 23,
+  "days": 4,
+  "per_day": 1200,
+  "messages": 4800,
+  "recalls": 3,
+  "traps": 25,
+  "rewritten": false,
+  "group": "eval",
+  "timezone": "Asia/Shanghai",
+  "messages_sha256": "23de3fba794539000d727410e1e8698470c74429165295cfffc944d4266ebc6c",
+  "note": "全为虚构数据；标准答案只在 oracle.json。"
+}

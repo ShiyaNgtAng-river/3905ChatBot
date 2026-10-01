@@ -10,9 +10,12 @@
 python3 tools/sandbox/run.py                         # 本地假模型：不需要 Key，不产生费用
 python3 tools/sandbox/run.py --model deepseek        # 真实 DeepSeek，经 AstrBot 管理的 Provider 调用
 python3 tools/sandbox/run.py --model qwen            # 真实 Qwen（默认北京地域兼容地址）
+python3 tools/sandbox/run.py --astrbot /path/to/AstrBot-master     # 复用本机已安装的 AstrBot
+python3 tools/sandbox/run.py --frontend plugin       # 回归 v0.2 自有对话前台
 ```
 
-- 首次运行会把 AstrBot 克隆到 `.sandbox/astrbot` 并用 `uv sync` 安装（约 500 MB，需要 git、uv；Python 3.12 由 uv 选择或下载）。之后复用。
+- 不加 `--astrbot` 时，首次运行会把 AstrBot 克隆到 `.sandbox/astrbot` 并用 `uv sync` 安装（约 500 MB，需要 git、uv；Python 3.12 由 uv 选择或下载），之后复用。
+- 加 `--astrbot` 时只使用该目录的源码和 `.venv`：运行数据经 `ASTRBOT_ROOT` 写入 `.sandbox/work-<model>/`；只读取该实例现成的面板文件 `data/dist`，不下载任何东西，也不写入它的 `data/`。沙盒里的 AstrBot 关闭了匿名统计。
 - 真实模型从环境变量 `GROUPBOT_MODEL_API_KEY` 读取 Key。脚本只把变量名 `$GROUPBOT_MODEL_API_KEY` 写进沙盒里的 AstrBot 配置，Key 本身不会落盘或进入报告。
 - 模型 ID、地址默认取 `config/deepseek.json`、`config/qwen.json`；与控制台不一致时用 `--model-id`（或环境变量 `GROUPBOT_MODEL_ID`）和 `--base-url` 覆盖。
 - 真实模型运行前先发一个极小的连通请求，Key、模型 ID、余额或网络有问题会直接给出原因并停止。
@@ -24,7 +27,7 @@ python3 tools/sandbox/run.py --model qwen            # 真实 Qwen（默认北�
 
 | 类别 | 含义 | 例子 |
 | --- | --- | --- |
-| 系统 | 与模型无关，必须全部通过；任一失败则退出码为 1 | 插件加载、普通消息不回复、`/问` 和 @ 只回一条、重复投递、撤回、命令、`/别记我`、重启 |
+| 系统 | 与模型无关，必须全部通过；任一失败则退出码为 1 | 插件加载、普通消息不回复、`/问` 和 @ 只回一条、重复投递、撤回、命令、`/别记我`、重启；`--frontend astrbot`（默认）下还检查：宿主 agent 带群聊上下文且不带旧历史、真实调用 `search_group_history`、`save_group_drafts`、`submit_group_events`，确认人与非确认人的结果不同，回复去掉 Markdown 并附程序回执，后台生成话题摘要与成员印象并能经 `get_group_episodes` 取回 |
 | 理解 | 取决于模型对自然语言的理解；真实模型下是效果观察，不是程序错误 | 提议／确认／个人缺席／非确认人取消／改期是否被正确记录，回答是否给出新时间 |
 
 `observations` 还记录回复延迟、各类模型调用次数与耗时、`/sid` 的回复（插件会额外回“未识别的命令”），假模型模式下还记录模型持续故障多久后消息被标为失败、恢复后是否重试。

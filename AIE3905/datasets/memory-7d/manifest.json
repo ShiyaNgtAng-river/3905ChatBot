@@ -1,0 +1,12 @@
+{
+  "generator": "groupbot-days-1",
+  "seed": 7,
+  "days": 7,
+  "per_day": 300,
+  "messages": 2100,
+  "plans": 4,
+  "group": "eval",
+  "timezone": "Asia/Shanghai",
+  "messages_sha256": "30e33102c8ed16a20b3c4fcf90cb3e72152fb9fcb10e1ac415cd5ebff78038d8",
+  "note": "全为虚构数据；标准答案只在 oracle.json。"
+}

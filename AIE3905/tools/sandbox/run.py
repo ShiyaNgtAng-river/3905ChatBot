@@ -6,8 +6,11 @@ no cost) or a real DeepSeek/Qwen endpoint called through an AstrBot-managed prov
     python3 tools/sandbox/run.py                              # mock model
     python3 tools/sandbox/run.py --model deepseek             # key from GROUPBOT_MODEL_API_KEY
     python3 tools/sandbox/run.py --model qwen --model-id qwen-plus
+    python3 tools/sandbox/run.py --astrbot /path/to/AstrBot   # reuse a local install, no download
 
-The first run clones AstrBot (pinned tag) into .sandbox/astrbot and installs it with uv.
+Without --astrbot the first run clones AstrBot (pinned tag) into .sandbox/astrbot and installs
+it with uv. With --astrbot only its source and .venv are used; all runtime data goes to
+.sandbox/work-<model>/ through ASTRBOT_ROOT, so the local instance's data is never touched.
 """
 from __future__ import annotations
 
@@ -15,6 +18,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import shutil
 import socket
 import sqlite3
@@ -51,6 +55,10 @@ def parse():
     p.add_argument('--dashboard-port', type=int, default=16185)
     p.add_argument('--mock-port', type=int, default=16800)
     p.add_argument('--plugin-main', default='', help='用指定 main.py 替换插件入口，用于回归对照')
+    p.add_argument('--astrbot', default=os.environ.get('GROUPBOT_ASTRBOT', ''),
+                   help='复用本机已安装的 AstrBot 源码目录（需含 .venv）；不克隆、不下载，也不读写其 data 目录')
+    p.add_argument('--frontend', choices=['astrbot', 'plugin'], default='astrbot',
+                   help='插件的 dialogue.frontend：astrbot 由宿主 agent 回答 @，plugin 为 v0.2 自有对话')
     return p.parse_args()
 
 
@@ -111,15 +119,19 @@ class Sandbox:
         self.args, self.settings = args, settings
         self.real = settings is not None
         self.home = Path(args.home).resolve()
-        self.astrbot = self.home / 'astrbot'
+        self.astrbot = Path(args.astrbot).resolve() if args.astrbot else self.home / 'astrbot'
         self.work = self.home / f'work-{args.model}'
         self.root = self.work / 'root'
         self.data = self.root / 'data'
         self.pdata = self.data / 'plugin_data' / PLUGIN
         self.procs = {}
         self.log = None
+        tag = ASTRBOT_TAG
+        if args.astrbot:
+            found = re.search(r'__version__ = "([^"]+)"', (self.astrbot / 'astrbot/__init__.py').read_text(encoding='utf-8'))
+            tag = 'local v' + (found.group(1) if found else '?')
         self.report = {'model': args.model, 'model_id': settings['model'] if settings else 'mock-model',
-                       'astrbot_tag': ASTRBOT_TAG, 'started': datetime.now().isoformat(timespec='seconds'),
+                       'astrbot_tag': tag, 'frontend': args.frontend, 'started': datetime.now().isoformat(timespec='seconds'),
                        'checks': [], 'observations': {}}
 
     # -- bookkeeping
@@ -154,7 +166,8 @@ class Sandbox:
                              'provider_type': 'chat_completion', 'enable': True, 'proxy': '', 'custom_headers': {}, **provider}],
                'provider_settings': {'default_provider_id': 'sandbox-model'},
                'platform_settings': {'rate_limit': {'time': 60, 'count': 1000, 'strategy': 'stall'}},
-               'dashboard': {'port': self.args.dashboard_port, 'host': '127.0.0.1'}}
+               'dashboard': {'port': self.args.dashboard_port, 'host': '127.0.0.1'},
+               'disable_metrics': True}
         (self.data / 'cmd_config.json').write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
 
     def write_plugin_config(self):
@@ -165,7 +178,11 @@ class Sandbox:
                            'processing_location': f"沙盒：{self.report['model_id']}；全部为虚构数据",
                            'proactive': False, 'report_time': '', 'platform_id': 'sandbox-qq', 'native_group_id': str(GROUP)}],
                'web': {'enabled': False},
-               'models': {'understanding': {'provider_id': 'sandbox-model'}, 'answering': {'provider_id': 'sandbox-model'}}}
+               'models': {'understanding': {'provider_id': 'sandbox-model'}, 'answering': {'provider_id': 'sandbox-model'}},
+               'dialogue': {'frontend': self.args.frontend, 'fast_provider': 'sandbox-model', 'deep_provider': 'sandbox-model'},
+               # Near-immediate reading passes so the memory loop reads the day during the run.
+               'memory': {'read_new_chars': 1, 'read_idle_minutes': 0.05, 'read_min_minutes': 0.05,
+                          'start_delay_seconds': 1}}
         (self.pdata / 'config.json').write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
 
     def start_mock(self):
@@ -176,7 +193,11 @@ class Sandbox:
     def start_astrbot(self, tag):
         self.log = self.work / f'astrbot-{tag}.log'
         env = dict(os.environ, ASTRBOT_ROOT=str(self.root))
-        self.procs['astrbot'] = subprocess.Popen([sys.executable, 'main.py'], cwd=self.astrbot, env=env,
+        cmd = [sys.executable, 'main.py']
+        # Serve an existing dashboard build instead of downloading one.
+        if (self.astrbot / 'data' / 'dist' / 'index.html').exists():
+            cmd += ['--webui-dir', str(self.astrbot / 'data' / 'dist')]
+        self.procs['astrbot'] = subprocess.Popen(cmd, cwd=self.astrbot, env=env,
                                                  stdout=open(self.log, 'w'), stderr=subprocess.STDOUT)
         wait_port(self.args.ws_port, 120, self.procs['astrbot'])
 
@@ -406,9 +427,12 @@ async def scenario(sb: Sandbox):
     sb.check(M, '/问 回答给出新时间并附依据', ('10-12' in text or '10月12' in text) and '依据' in text, text[:200])
     sb.report['observations']['sample_answer'] = text
 
+    t_at = time.time()
     out = await ask(LIN, '产品评审谁负责？', at=True)
     sb.check(S, '@机器人提问只收到一条回复', len(out) == 1, f'replies={len(out)}')
     sb.report['observations']['at_answer'] = out[0]['text'] if out else ''
+    if sb.args.frontend == 'astrbot' and not real:
+        await native_checks(sb, ask, out, t_at)
 
     before = sb.count('SELECT COUNT(*) FROM events')
     n0 = len(nc.sent)
@@ -464,6 +488,8 @@ async def scenario(sb: Sandbox):
         await sb.processed(await nc.say(LIN, '服务恢复后的普通消息'))
         sb.report['observations']['failed_message_after_recovery'] = (sb.msg(mf) or {}).get('status')
 
+    if sb.args.frontend == 'astrbot':
+        sb.check(S, '配置群内没有不带群记上下文的默认 AI 回复', not sb.mock_calls('astrbot_default', 0) if not real else True)
     with sb.db() as c:
         sb.report['observations']['message_status'] = {r[0]: r[1] for r in c.execute('SELECT status,COUNT(*) FROM messages GROUP BY status')}
         sb.report['observations']['model_usage'] = [dict(r) for r in c.execute(
@@ -482,6 +508,59 @@ async def scenario(sb: Sandbox):
     sb.check(S, '全程 AstrBot 日志无异常堆栈', all('Traceback' not in p.read_text(errors='replace') for p in sb.work.glob('astrbot-*.log')))
     await nc.close()
     sb.stop_astrbot()
+
+
+async def native_checks(sb, ask, first_reply, t0):
+    """AstrBot-native frontend: host agent answers with plugin context and real tool calls."""
+    S = 'system'
+    calls = sb.mock_calls('host_agent', t0)
+    first = calls[0] if calls else {}
+    sb.check(S, '@ 由宿主 agent 回答：带群聊上下文、群记工具，且不带宿主旧历史',
+             bool(first) and '中午大家吃什么' in first['system'] and 'search_group_history' in first['tools']
+             and first['history'] == 1, {k: first.get(k) for k in ('tools', 'history')})
+    text = first_reply[0]['text'] if first_reply else ''
+    sb.check(S, '回复去掉 Markdown 并记为 native 回答', '**' not in text and text.startswith('收到')
+             and sb.count("SELECT COUNT(*) FROM answers WHERE mode='native'") == 1, text[:80])
+
+    t = time.time()
+    out = await ask(YU, '之前谁说过中午吃什么', at=True)
+    turn = sb.mock_calls('host_agent', t)
+    sb.check(S, '宿主 agent 调用 search_group_history 查到原话', len(out) == 1 and '中午大家吃什么' in out[0]['text']
+             and bool(turn) and turn[0]['history'] == 1 and ' 你] 收到' in turn[0]['system'],
+             out[0]['text'][:80] if out else 'no reply')
+
+    out = await ask(OWNER, '帮我们设计评审后的聚餐方案', at=True)
+    drafts = sb.count("SELECT COUNT(*) FROM drafts WHERE title LIKE '%聚餐%'")
+    sb.check(S, 'save_group_drafts 经宿主工具链保存草案，回复单条', len(out) == 1 and drafts == 1
+             and '**' not in out[0]['text'] and '希望对你有帮助' not in out[0]['text'],
+             f"drafts={drafts} reply={out[0]['text'][:60] if out else ''}")
+    out = await ask(OWNER, '就按这个方案定了', at=True)
+    s = sb.item('聚餐')
+    sb.check(S, '确认人自然确认 → 正式记录并附程序回执', len(out) == 1 and '（「聚餐」已记录）' in out[0]['text']
+             and s and s['status'] == 'confirmed', out[0]['text'][:80] if out else 'no reply')
+
+    await ask(LIN, '帮我设计周会方案', at=True)
+    out = await ask(LIN, '就按这个方案定了', at=True)
+    s = sb.item('周会')
+    sb.check(S, '非确认人自然确认 → 只进入待确认', len(out) == 1 and '等确认人确认' in out[0]['text']
+             and s and s['status'] != 'confirmed', out[0]['text'][:80] if out else 'no reply')
+
+    # The memory loop ticks every 30 s; with the sandbox settings a reading pass is due.
+    end = time.time() + 75
+    while time.time() < end and not sb.count('SELECT COUNT(*) FROM day_views'):
+        await asyncio.sleep(1)
+    views = sb.count('SELECT COUNT(*) FROM day_views')
+    cached = sb.count("SELECT COALESCE(SUM(cached_tokens),0) FROM usage WHERE role='reading'")
+    sb.check(S, '后台通读经宿主模型生成当天目录，并记录缓存命中量', views == 1 and cached > 0,
+             f'day_views={views} cached_tokens={cached}')
+    t = time.time()
+    out = await ask(OWNER, '最近群里聊了什么', at=True)
+    turn = sb.mock_calls('host_agent', t)
+    sb.check(S, '@ 的提示先放当天目录，get_group_episodes 取到当天话题',
+             len(out) == 1 and '沙盒话题' in out[0]['text'] and bool(turn)
+             and 0 <= turn[0]['system'].find('<group_memory>') < turn[0]['system'].find('<group_chat>')
+             and '今天群里的话题' in turn[0]['system'],
+             out[0]['text'][:80] if out else 'no reply')
 
 
 def inner(args):
@@ -510,11 +589,17 @@ def inner(args):
 def main():
     args = parse()
     home = Path(args.home).resolve()
-    venv = (home / 'astrbot' / '.venv').resolve()
+    source = Path(args.astrbot).resolve() if args.astrbot else home / 'astrbot'
+    venv = (source / '.venv').resolve()
     if Path(sys.prefix).resolve() != venv:
         if args.model != 'mock':
             model_settings(args)  # validate choices before the long install
-        py = ensure_astrbot(home)
+        if args.astrbot:
+            py = source / '.venv/bin/python'
+            if not (source / 'main.py').exists() or not py.exists():
+                sys.exit(f'{source} 不是含 .venv 的 AstrBot 源码目录')
+        else:
+            py = ensure_astrbot(home)
         os.execv(str(py), [str(py), str(Path(__file__).resolve()), *sys.argv[1:]])
     return inner(args)
 

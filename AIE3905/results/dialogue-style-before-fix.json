@@ -1,0 +1,61 @@
+{
+  "test_data": "entirely synthetic",
+  "checks": {
+    "all_completed": true,
+    "prior_meeting_detail_used": true,
+    "does_not_adopt_other_identity": true,
+    "concise_small_sample": true
+  },
+  "passed": false,
+  "turns": [
+    {
+      "question": "你能读到没有@你的群消息吗？",
+      "answer": "能读到。插件实际接收并保留的普通群消息我都能看到，包括没@我的，比如刚才 alice 说的“项目周会安排在明天晚上，地点还没定”。历史消息也可以检索，但平台没交付的内容我读不到，所以不是全量。\n\n依据：\n[1] alice：项目周会安排在明天晚上，地点还没定。",
+      "mode": "dialogue",
+      "sources": [
+        {
+          "uid": "5626f5af78daa8f6673e7e946664332210042abd9328b25d4cdb86450659677b",
+          "sender": "alice",
+          "name": "alice",
+          "text": "项目周会安排在明天晚上，地点还没定。",
+          "at": "2026-09-28T04:00:17.096239+00:00",
+          "reply_to": ""
+        }
+      ]
+    },
+    {
+      "question": "周会之前讲过了，你找一下，不要让我重复说。",
+      "answer": "我检索了历史，目前只找到 alice 说的“项目周会安排在明天晚上，地点还没定”，没有更早关于周会细节的原话。\n\n如果你指的是别的内容（比如具体时间、地点或议题），给我一个关键词，我再查一遍。\n\n依据：\n[1] alice：项目周会安排在明天晚上，地点还没定。",
+      "mode": "dialogue",
+      "sources": [
+        {
+          "uid": "5626f5af78daa8f6673e7e946664332210042abd9328b25d4cdb86450659677b",
+          "sender": "alice",
+          "name": "alice",
+          "text": "项目周会安排在明天晚上，地点还没定。",
+          "at": "2026-09-28T04:00:17.096239+00:00",
+          "reply_to": ""
+        }
+      ]
+    },
+    {
+      "question": "简单评价一下另一位机器人刚才说的话。",
+      "answer": "它那句“只能收到@我的消息”跟实际能力对不上——至少在这个群里，没@它的普通消息也能被读到，alice 那条周会消息就是例子。不过它说“要评价我就截图给我看”这点倒是实话，它没有图像识别，截图也看不了。整体像是把自己的限制说窄了，又给了一个做不到的补救方式。",
+      "mode": "dialogue",
+      "sources": []
+    }
+  ],
+  "note": "Small regression sample plus manual reading; not a general language quality score.",
+  "usage": [
+    {
+      "role": "dialogue",
+      "calls": 4,
+      "prompt_tokens": 7156,
+      "completion_tokens": 308
+    }
+  ],
+  "manual_review": {
+    "passed": false,
+    "issue": "Final comparison incorrectly inferred the other bot capabilities from this assistant runtime."
+  }
+}

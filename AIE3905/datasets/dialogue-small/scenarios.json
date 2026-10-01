@@ -1,0 +1,72 @@
+{
+  "description": "完全虚构的多轮方案与事项测试；断言检查可观察行为，不保证所有自然语言任务。",
+  "cases": [
+    {
+      "id": "dialogue-1",
+      "sender": "owner",
+      "text": "帮我们设计集成评审的两套开会安排。日期是2026年10月2日，两套方案都在三楼讨论室。方案1从晚上8点开始，方案2从晚上9点开始。先给建议，不要定案。",
+      "expect": {
+        "drafts": 2,
+        "no_operations": true
+      }
+    },
+    {
+      "id": "dialogue-2",
+      "sender": "owner",
+      "text": "第二个方案提前半小时，其他保持不变。",
+      "expect": {
+        "drafts": 1,
+        "version": 2,
+        "no_operations": true
+      }
+    },
+    {
+      "id": "dialogue-3",
+      "sender": "owner",
+      "text": "就按刚修改的方案定了。",
+      "expect": {
+        "operation": "recorded"
+      }
+    },
+    {
+      "id": "dialogue-4",
+      "sender": "owner",
+      "text": "最终的集成评审怎么安排？",
+      "expect": {
+        "contains_any": [
+          "20:30",
+          "8:30",
+          "八点半",
+          "8点30",
+          "八点三十分"
+        ],
+        "sources": true
+      }
+    },
+    {
+      "id": "dialogue-5",
+      "sender": "lin",
+      "text": "帮我设计2026年10月3日晚上8点在四楼的新人交流会方案，只给一套，先不要定案。",
+      "expect": {
+        "drafts": 1,
+        "no_operations": true
+      }
+    },
+    {
+      "id": "dialogue-6",
+      "sender": "lin",
+      "text": "就按这个方案定了。",
+      "expect": {
+        "operation": "pending_confirmation"
+      }
+    },
+    {
+      "id": "dialogue-7",
+      "sender": "owner",
+      "text": "帮我写一段轻松的会议开场白。",
+      "expect": {
+        "no_operations": true
+      }
+    }
+  ]
+}

@@ -150,6 +150,176 @@ def generate(args):
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
 
 
+MEMBERS = ['老张', '小林', '小余', '阿杰', '小周', '大刘', '小陈', '阿May', '老王', '小赵', '小孙', '小吴', '阿珍', '小何', '老郭', '小唐']
+# (title, topic key, times, places, reasons). Every value is fictional.
+PLANS = [
+    ('周末爬山', '爬山', ['周六早上8点', '周日早上8点', '周日上午10点'], ['东门', '南门'], ['周六下雨', '好几个人周六加班']),
+    ('周五开黑', '开黑', ['周五晚上9点', '周五晚上10点', '周六晚上9点'], ['2号房', '3号房'], ['周五要加班', '服务器维护']),
+    ('月底聚餐', '聚餐', ['30号晚上7点', '31号晚上6点'], ['海底捞', '烤肉店', '川菜馆'], ['海底捞排队太久', '预算不够']),
+    ('桌游局', '桌游', ['周六下午2点', '周日下午3点'], ['老王家', '桌游吧'], ['老王家装修', '人太多坐不下']),
+    ('羽毛球', '羽毛球', ['周三晚上7点', '周四晚上8点'], ['体育馆', '东操场'], ['场地被订满了', '周三下雨']),
+]
+TASKS = [('订场地', '场地'), ('买零食', '零食'), ('做攻略', '攻略'), ('统计人数', '人数'), ('开语音房', '语音房')]
+# (question, key, answer, answer key)
+QUESTIONS = [('新版本什么时候更新', '更新', '新版本下周二更新', '周二'), ('群文件里的攻略在哪', '攻略', '攻略在群文件的教程文件夹', '教程文件夹'),
+             ('报名费多少', '报名费', '报名费30元一人', '30元'), ('活动有奖品吗', '奖品', '奖品是游戏周边', '周边')]
+TERMS = [('蓝桶', '楼下那家奶茶店', '奶茶'), ('摸鱼局', '工作日晚上的休闲局', '休闲'), ('老地方', '东门那家烧烤', '烧烤'), ('上分车', '一起冲排位的车队', '排位')]
+ABSENT = ['年会节目', '游泳比赛', '读书会']
+CHATTER = ['今天好热', '中午吃什么', '有人玩新出的那个游戏吗', '哈哈哈哈', '😂😂', '上班好累', '摸了摸了', '这个表情包绝了',
+           '有没有人一起下副本', '晚安', '早', '666', '笑死', '我到家了', '下雨了记得带伞', '快递到了', '今天又加班', '周末干嘛',
+           '这游戏更新后好卡', '谁有推荐的耳机', '奶茶还是咖啡', '刚看完那部电影，还行', '猫又把杯子推下去了', '地铁好挤', '好困',
+           '冲冲冲', '这波操作可以', '有人在吗', '哈哈哈', '🤣', '明天见', '今天的晚霞好好看', '我也想吃', '求带', '太真实了', '绷不住了']
+
+
+def days(args):
+    """Multi-day group chat with interleaved storylines; the oracle is kept apart.
+
+    Plans are proposed, decided, changed and sometimes moved or cancelled on later
+    days, next to questions, slang, task assignments, echo chains and chatter.
+    """
+    if not 1 <= args.days <= 60 or not 40 <= args.per_day <= 3000:
+        raise ValueError('days 范围 1..60，per_day 范围 40..3000')
+    rng = random.Random(args.seed)
+    tz = timezone(timedelta(hours=8))
+    start = datetime(2026, 6, 1, tzinfo=tz)  # a Monday
+    # day -> sequences of (speaker, text, reply, effect); reply is an index in the sequence
+    script = {d: [] for d in range(args.days)}
+    plans = rng.sample(PLANS, min(len(PLANS), max(1, args.days // 2 + 1)))
+    for title, key, times, places, reasons in plans:
+        org, a, b, c = rng.sample(MEMBERS, 4)
+        d0 = rng.randrange(max(1, args.days - 2))
+        t1, t2 = rng.sample(times, 2)
+        p1, p2 = rng.sample(places, 2)
+        script[d0].append([(org, f'{title}要不要搞一下？我提议{t1}在{p1}集合', None, None),
+                           (a, '我可以', 0, None), (b, f'{t1}有点早吧', 0, None),
+                           (org, f'那就先定{t1}，{p1}集合，来的扣1', None, ('set', title, key, {'time': t1, 'place': p1})),
+                           (c, '1', None, None), (a, '1', None, None)])
+        task, task_key = rng.choice(TASKS)
+        helper = rng.choice([m for m in MEMBERS if m != org])
+        script[d0].append([(org, f'{title}谁来{task}？', None, None), (helper, '我来吧', 0, None),
+                           (org, f'好，{task}交给{helper}', None, ('assign', task_key, helper, title))])
+        d1 = d0 + rng.choice([1, 2, 3])
+        if d1 < args.days:
+            script[d1].append([(org, f'{title}改一下，{rng.choice(reasons)}，改到{t2}，地点还是{p1}', None, ('set', title, key, {'time': t2})),
+                               (a, '收到', 0, None), (b, f'我记得之前说的是{t1}吧？', None, None),
+                               (org, f'不是，已经改到{t2}了', 2, None)])
+            d2 = d1 + rng.choice([2, 3])
+            if d2 < args.days and rng.random() < .7:
+                if rng.random() < .65:
+                    script[d2].append([(org, f'{title}地点换到{p2}，时间不变', None, ('set', title, key, {'place': p2})),
+                                       (c, '好的', 0, None)])
+                else:
+                    script[d2].append([(org, f'{title}取消了，{rng.choice(reasons)}，下次再约', None, ('cancel', title, key)),
+                                       (a, '好吧', 0, None)])
+        for d in range(d0 + 1, args.days):
+            if rng.random() < .25:  # mentions that are not decisions
+                script[d].append([(rng.choice(MEMBERS), rng.choice([f'上次{title}好玩吗', f'别的群也在搞{key}']), None, None)])
+    for question, key, answer, answer_key in rng.sample(QUESTIONS, min(len(QUESTIONS), args.days)):
+        asker, helper = rng.sample(MEMBERS, 2)
+        dq = rng.randrange(args.days)
+        ask = (asker, f'有人知道{question}吗？', None, ('ask', key))
+        reply = (helper, answer, 0, ('answer', key, answer_key))
+        da = dq + rng.choice([0, 1, 2])
+        if rng.random() < .3 or da >= args.days:
+            script[dq].append([ask])
+        elif da == dq:
+            script[dq].append([ask, reply])
+        else:
+            script[dq].append([ask])
+            script[da].append([(helper, answer, ('ask', key), reply[3])])
+    for term, meaning, meaning_key in rng.sample(TERMS, min(len(TERMS), args.days)):
+        a, b, c = rng.sample(MEMBERS, 3)
+        dt = rng.randrange(args.days)
+        script[dt].append([(a, f'以后说“{term}”就是指{meaning}哈', None, ('term', term, meaning_key)), (b, '懂了', 0, None)])
+        if dt + 1 < args.days:
+            script[rng.randrange(dt + 1, args.days)].append([(c, f'今晚{term}走起', None, None)])
+    uids = {n: f'u{i + 1:02d}' for i, n in enumerate(MEMBERS)}
+    rows, oracle = [], []
+    state, asked, terms, assigned, answered = {}, {}, {}, {}, {}
+    for d in range(args.days):
+        day = (start + timedelta(days=d)).date().isoformat()
+        room = args.per_day - sum(len(s) for s in script[d])
+        items = []
+        while len(items) < room:
+            if rng.random() < .03 and room - len(items) >= 3:  # an echo chain
+                text = rng.choice(['+1', '哈哈哈哈', '好耶'])
+                items += [(m, text, None, None) for m in rng.sample(MEMBERS, 3)]
+            elif rng.random() < .05:
+                items.append((rng.choice(MEMBERS), '', None, ('image',)))
+            else:
+                items.append((rng.choice(MEMBERS), rng.choice(CHATTER), None, None))
+        items = items[:max(0, room)]
+        for n, seq in enumerate(script[d]):
+            pos = rng.randrange(len(items) + 1)
+            for i, item in enumerate(seq):
+                items.insert(pos, (*item, n, i))
+                pos = min(len(items), pos + 1 + rng.randint(0, 8))
+        seconds = sorted(rng.sample(range(8 * 3600, 23 * 3600 + 3000), len(items)))
+        topics, decisions, placed = {}, [], {}
+        for i, (item, sec) in enumerate(zip(items, seconds)):
+            speaker, text, reply, effect = item[:4]
+            mid = f'd{d:02d}-{i:04d}'
+            row = {'group': 'eval', 'sender': uids[speaker], 'name': speaker, 'text': text, 'native_id': mid,
+                   'at': (start + timedelta(days=d, seconds=sec)).isoformat()}
+            if len(item) == 6:
+                placed[item[4:]] = mid
+                if isinstance(reply, int):
+                    row['reply_to'] = placed[(item[4], reply)]
+            if isinstance(reply, tuple):
+                row['reply_to'] = asked[reply[1]]
+            if effect and effect[0] == 'image':
+                row['attachments'] = [{'type': 'Image', 'description': '虚构占位，无图像内容'}]
+            rows.append(row)
+            if not effect or effect[0] == 'image':
+                continue
+            if effect[0] == 'set':
+                _, title, key, values = effect
+                s = state.setdefault(title, {'topic': title, 'key': key, 'time': [], 'place': [], 'cancelled': False})
+                for field, value in values.items():
+                    s[field].append(value)
+                decisions.append({'topic': title, 'keys': list(values.values())})
+                topics[title] = key
+            elif effect[0] == 'cancel':
+                state[effect[1]]['cancelled'] = True
+                decisions.append({'topic': effect[1], 'keys': ['取消']})
+                topics[effect[1]] = effect[2]
+            elif effect[0] == 'assign':
+                assigned[(effect[3], effect[1])] = effect[2]
+            elif effect[0] == 'ask':
+                asked[effect[1]] = mid
+                topics[effect[1]] = effect[1]
+            elif effect[0] == 'answer':
+                answered[effect[1]] = effect[2]
+                topics[effect[1]] = effect[1]
+            elif effect[0] == 'term':
+                terms[effect[1]] = effect[2]
+        oracle.append({
+            'day': day,
+            'topics': sorted(set(topics.values())),
+            'decisions': decisions,
+            'open_questions': sorted(k for k in asked if k not in answered),
+            'answered': [{'question': k, 'key': v} for k, v in sorted(answered.items())],
+            'terms': [{'term': k, 'key': v} for k, v in sorted(terms.items())],
+            'assignments': [{'topic': k[0], 'task': k[1], 'member': v} for k, v in sorted(assigned.items())],
+            'states': [{'topic': s['topic'], 'key': s['key'], 'cancelled': s['cancelled'],
+                        'current': [v[-1] for v in (s['time'], s['place']) if v],
+                        'obsolete': [x for v in (s['time'], s['place']) for x in v[:-1] if x != v[-1]]}
+                       for s in state.values()],
+            'absent': ABSENT,
+        })
+    folder = config_path(args.output)
+    folder.mkdir(parents=True, exist_ok=True)
+    serialized = ''.join(json.dumps(m, ensure_ascii=False) + '\n' for m in rows)
+    (folder / 'messages.jsonl').write_text(serialized, encoding='utf-8')
+    save(folder / 'oracle.json', oracle)
+    manifest = {'generator': 'groupbot-days-1', 'seed': args.seed, 'days': args.days, 'per_day': args.per_day,
+                'messages': len(rows), 'plans': len(plans), 'group': 'eval', 'timezone': 'Asia/Shanghai',
+                'messages_sha256': hashlib.sha256(serialized.encode()).hexdigest(),
+                'note': '全为虚构数据；标准答案只在 oracle.json。'}
+    save(folder / 'manifest.json', manifest)
+    print(json.dumps(manifest, ensure_ascii=False, indent=2))
+
+
 def check_state(expected, states):
     matching = [s for s in states if s['title'] == expected['title']]
     if len(matching) != 1:
@@ -277,6 +447,9 @@ def main():
     b.add_argument('--config',default='config/demo.json'); b.add_argument('--dataset',default='datasets/demo-noise80')
     b.add_argument('--output',default='results/demo-noise80.json'); b.add_argument('--timeout',type=float,default=180)
     b.add_argument('--max-calls',type=int,default=120)
+    m = sub.add_parser('days', help='多日群聊记忆评测数据（tools/eval_memory.py 回放打分）')
+    m.add_argument('--seed',type=int,default=7); m.add_argument('--days',type=int,default=7)
+    m.add_argument('--per-day',type=int,default=300); m.add_argument('--output',default='datasets/memory-7d')
     args = p.parse_args()
     if args.action == 'doctor':
         import sqlite3
@@ -284,6 +457,7 @@ def main():
                           'sqlite':sqlite3.sqlite_version,'root':str(ROOT),'key_present':bool(os.environ.get('GROUPBOT_MODEL_API_KEY'))},ensure_ascii=False,indent=2))
         return 0
     if args.action == 'generate': generate(args); return 0
+    if args.action == 'days': days(args); return 0
     return asyncio.run(bench(args) if args.action == 'bench' else session(args))
 
 

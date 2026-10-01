@@ -1,0 +1,274 @@
+{
+  "version": "0.2.0",
+  "test_data": "entirely synthetic",
+  "transport": "direct compatible API; not AstrBot runtime",
+  "checks": {
+    "design_saves_two_drafts": true,
+    "design_does_not_confirm": true,
+    "revision_saves_new_version": true,
+    "authorized_confirmation": true,
+    "query_reports_time": true,
+    "query_cites_sources": false,
+    "unauthorized_stays_pending": false,
+    "writing_without_fact_gate": true
+  },
+  "passed": false,
+  "task_pass_rate": 0.75,
+  "unauthorized_confirmations": 0,
+  "citation_scope": "structural source validity plus synthetic expected answer, not a semantic accuracy benchmark",
+  "latency_p50_seconds": 2.498,
+  "latency_max_seconds": 4.329,
+  "usage": [
+    {
+      "role": "dialogue",
+      "calls": 15,
+      "prompt_tokens": 26337,
+      "completion_tokens": 1874
+    }
+  ],
+  "turns": [
+    {
+      "actor": "owner",
+      "request": "帮我们设计集成评审的两套开会安排。日期是2026年10月2日，两套方案都在三楼讨论室。方案1从晚上8点开始，方案2从晚上9点开始。先给建议，不要定案。",
+      "response": {
+        "id": "5b592e69e59d",
+        "text": "已按你的要求整理成两套建议方案（都还没定案）：\n\n- 方案1：2026年10月2日 20:00，三楼讨论室，集成评审\n- 方案2：2026年10月2日 21:00，三楼讨论室，集成评审\n\n两套只差开始时间，地点和日期一致。需要我调整时长、参与人，或者直接确认其中一套吗？",
+        "sources": [],
+        "drafts": [
+          {
+            "id": "447909f8d388e0c956b24652",
+            "answer_id": "5b592e69e59d",
+            "option_number": 1,
+            "title": "集成评审（方案1：20:00开始）",
+            "description": "建议方案：2026年10月2日20:00在三楼讨论室进行集成评审。",
+            "fields": {
+              "when": "2026-10-02T20:00:00+08:00",
+              "time_raw": "2026年10月2日 20:00",
+              "location": "三楼讨论室",
+              "note": "建议方案，尚未定案"
+            },
+            "version": 1
+          },
+          {
+            "id": "493df937730cb46dcc7a7b28",
+            "answer_id": "5b592e69e59d",
+            "option_number": 2,
+            "title": "集成评审（方案2：21:00开始）",
+            "description": "建议方案：2026年10月2日21:00在三楼讨论室进行集成评审。",
+            "fields": {
+              "when": "2026-10-02T21:00:00+08:00",
+              "time_raw": "2026年10月2日 21:00",
+              "location": "三楼讨论室",
+              "note": "建议方案，尚未定案"
+            },
+            "version": 1
+          }
+        ],
+        "operations": [],
+        "mode": "dialogue",
+        "ready": true
+      },
+      "seconds": 2.197,
+      "states": []
+    },
+    {
+      "actor": "owner",
+      "request": "第二个方案提前半小时，其他保持不变。",
+      "response": {
+        "id": "167d056298ef",
+        "text": "已把方案2提前半小时，改成 2026年10月2日 20:30，地点仍是三楼讨论室，其他不变。\n\n- 方案1：2026年10月2日 20:00，三楼讨论室\n- 方案2（新）：2026年10月2日 20:30，三楼讨论室\n\n两套都还是建议，没定案。需要确认哪一套，或再调整吗？",
+        "sources": [],
+        "drafts": [
+          {
+            "id": "2ee7ec986dbcd763ecfcc04a",
+            "answer_id": "167d056298ef",
+            "option_number": 2,
+            "title": "集成评审（方案2：20:30开始）",
+            "description": "建议方案：2026年10月2日20:30在三楼讨论室进行集成评审。",
+            "fields": {
+              "location": "三楼讨论室",
+              "note": "建议方案，尚未定案",
+              "time_raw": "2026年10月2日 20:30",
+              "when": "2026-10-02T20:30:00+08:00"
+            },
+            "version": 2
+          }
+        ],
+        "operations": [],
+        "mode": "dialogue",
+        "ready": true
+      },
+      "seconds": 2.498,
+      "states": []
+    },
+    {
+      "actor": "owner",
+      "request": "就按刚修改的方案定了。",
+      "response": {
+        "id": "b640d1d3e693",
+        "text": "已按刚修改的方案2定案：集成评审定在 2026年10月2日 20:30，地点三楼讨论室。已正式记录。\n\n事项处理：集成评审（方案2：20:30开始）（已记录）",
+        "sources": [],
+        "drafts": [],
+        "operations": [
+          {
+            "event_id": "a927c6d9b050f70aa6afad03",
+            "item_id": "05e6a471fd1ce5b18680",
+            "title": "集成评审（方案2：20:30开始）",
+            "status": "recorded"
+          }
+        ],
+        "mode": "dialogue",
+        "ready": true
+      },
+      "seconds": 2.174,
+      "states": [
+        {
+          "title": "集成评审（方案2：20:30开始）",
+          "status": "confirmed",
+          "fields": {
+            "location": "三楼讨论室",
+            "note": "建议方案，尚未定案",
+            "time_raw": "2026年10月2日 20:30",
+            "when": "2026-10-02T20:30:00+08:00"
+          }
+        }
+      ]
+    },
+    {
+      "actor": "owner",
+      "request": "最终的集成评审怎么安排？",
+      "response": {
+        "id": "50cccfeaf2ab",
+        "text": "集成评审已经定了：2026年10月2日 20:30，三楼讨论室（就是方案2提前半小时后的版本）。\n\n需要我再补充参与人、时长或议程吗？",
+        "sources": [],
+        "drafts": [],
+        "operations": [],
+        "mode": "dialogue",
+        "ready": true
+      },
+      "seconds": 0.867,
+      "states": [
+        {
+          "title": "集成评审（方案2：20:30开始）",
+          "status": "confirmed",
+          "fields": {
+            "location": "三楼讨论室",
+            "note": "建议方案，尚未定案",
+            "time_raw": "2026年10月2日 20:30",
+            "when": "2026-10-02T20:30:00+08:00"
+          }
+        }
+      ]
+    },
+    {
+      "actor": "lin",
+      "request": "帮我设计2026年10月3日晚上8点在四楼的新人交流会方案，只给一套，先不要定案。",
+      "response": {
+        "id": "2d3d6fed209c",
+        "text": "本次处理达到轮次上限，请继续说明需要处理的部分。\n已保存以下建议，尚未定案：\n方案1：建议方案：2026年10月3日（周六）晚上8点，在四楼举办新人交流会。可安排自我介绍、破冰互动、老成员经验分享与自由交流等环节，时长约1.5小时。此为建议，尚未定案。",
+        "mode": "dialogue_fallback",
+        "sources": [],
+        "drafts": [
+          {
+            "id": "50ddab0a9bac90b6d6815492",
+            "answer_id": "2d3d6fed209c",
+            "option_number": 1,
+            "title": "新人交流会",
+            "description": "建议方案：2026年10月3日（周六）晚上8点，在四楼举办新人交流会。可安排自我介绍、破冰互动、老成员经验分享与自由交流等环节，时长约1.5小时。此为建议，尚未定案。",
+            "fields": {
+              "when": "2026-10-03T20:00:00+08:00",
+              "time_raw": "2026年10月3日晚上8点",
+              "location": "四楼",
+              "note": "建议方案，未定案；可含自我介绍、破冰、经验分享、自由交流"
+            },
+            "version": 1
+          }
+        ],
+        "operations": [],
+        "ready": false
+      },
+      "seconds": 4.329,
+      "states": [
+        {
+          "title": "集成评审（方案2：20:30开始）",
+          "status": "confirmed",
+          "fields": {
+            "location": "三楼讨论室",
+            "note": "建议方案，尚未定案",
+            "time_raw": "2026年10月2日 20:30",
+            "when": "2026-10-02T20:30:00+08:00"
+          }
+        }
+      ]
+    },
+    {
+      "actor": "lin",
+      "request": "就按这个方案定了。",
+      "response": {
+        "id": "b03947f9d4d7",
+        "text": "你这条“就按这个方案定了”目前只能对应到你自己刚提的新人交流会草案（2026年10月3日晚上8点、四楼），但那份草案你之前明确说“先不要定案”，所以我不确定你现在是要把它定下来，还是指别的安排。\n\n另外提醒一下：集成评审已经由 owner 确认过了，是2026年10月2日20:30、三楼讨论室，不需要再定。\n\n请确认一下：你是要把新人交流会（10月3日20:00、四楼）正式定下来吗？确认后我就提交。\n\n依据：\n[1] 群成员：帮我设计2026年10月3日晚上8点在四楼的新人交流会方案，只给一套，先不要定案。\n[2] 群成员：就按刚修改的方案定了。",
+        "sources": [
+          {
+            "uid": "f0796790a41d543f9483e6297f9d09fc136d01a87827cd6cdeb368e5eb291882",
+            "sender": "lin",
+            "name": "",
+            "text": "帮我设计2026年10月3日晚上8点在四楼的新人交流会方案，只给一套，先不要定案。",
+            "at": "2026-09-28T03:35:10.373811+00:00",
+            "reply_to": ""
+          },
+          {
+            "uid": "2b00c799b03f28c6ae8848ff89ebfb6e571cbbf12ad14b28f52095d98ba5e116",
+            "sender": "owner",
+            "name": "",
+            "text": "就按刚修改的方案定了。",
+            "at": "2026-09-28T03:35:07.332165+00:00",
+            "reply_to": ""
+          }
+        ],
+        "drafts": [],
+        "operations": [],
+        "mode": "dialogue",
+        "ready": true
+      },
+      "seconds": 2.536,
+      "states": [
+        {
+          "title": "集成评审（方案2：20:30开始）",
+          "status": "confirmed",
+          "fields": {
+            "location": "三楼讨论室",
+            "note": "建议方案，尚未定案",
+            "time_raw": "2026年10月2日 20:30",
+            "when": "2026-10-02T20:30:00+08:00"
+          }
+        }
+      ]
+    },
+    {
+      "actor": "owner",
+      "request": "帮我写一段轻松的会议开场白。",
+      "response": {
+        "id": "fba814c6c084",
+        "text": "来一段轻松点的开场白，可以直接用：\n\n“大家先把手头的活儿放一放，欢迎来到今天的集成评审。今天咱们不搞长篇大论，目标就一个：把该对齐的对齐，把该拍板的拍板。有想法随时说，有疑问随时提，咱们争取高效又轻松地把这场会开完。好，开始吧！”\n\n如果想让气氛更活一点，也可以换成这句：\n\n“各位好，欢迎参加集成评审。今天没有考试，只有讨论——说错了不扣分，说对了省大家时间。咱们边聊边把问题解决掉，开始吧！”\n\n需要我按你们团队平时的风格再调一调吗？比如更正式一点，或者更幽默一点。",
+        "sources": [],
+        "drafts": [],
+        "operations": [],
+        "mode": "dialogue",
+        "ready": true
+      },
+      "seconds": 3.132,
+      "states": [
+        {
+          "title": "集成评审（方案2：20:30开始）",
+          "status": "confirmed",
+          "fields": {
+            "location": "三楼讨论室",
+            "note": "建议方案，尚未定案",
+            "time_raw": "2026年10月2日 20:30",
+            "when": "2026-10-02T20:30:00+08:00"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -3,6 +3,23 @@
   "database": "../data/qq.sqlite3",
   "max_attempts": 3,
   "query_wait_seconds": 8,
+  "dialogue": {
+    "enabled": true,
+    "frontend": "astrbot",
+    "context_messages": 40,
+    "fast_provider": "REPLACE_WITH_FAST_PROVIDER_ID",
+    "deep_provider": "REPLACE_WITH_REASONING_PROVIDER_ID"
+  },
+  "memory": {
+    "reading": true,
+    "qa_list": "qa_list.json",
+    "read_new_chars": 6000,
+    "read_idle_minutes": 60,
+    "read_min_minutes": 10,
+    "consolidate_time": "04:00",
+    "gate": true,
+    "profiles": true
+  },
   "groups": [
     {
       "key": "qq-pilot",
@@ -45,6 +62,9 @@
     },
     "answering": {
       "provider_id": "REPLACE_WITH_ASTRBOT_PROVIDER_ID"
+    },
+    "consolidating": {
+      "provider_id": "REPLACE_WITH_STRONGER_ASTRBOT_PROVIDER_ID"
     }
   }
 }

@@ -5,7 +5,7 @@ import json
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '0.1.1'
+VERSION = '0.2.1'
 OUTPUT = ROOT/'dist'
 DIRECTORIES = ('plugin','config','datasets','results','docs','tools')
 FILES = ('README.md','CHANGELOG.md','SOURCE.json','.gitignore','run','lab.py','test_lab.py')
@@ -14,6 +14,7 @@ CONFIGS = {'demo.json','deepseek.json','qwen.json','online.template.json','qq.te
 
 def keep(path):
     rel = path.relative_to(ROOT)
+    if str(rel) == 'tools/apply_qq_pilot_config.py': return False
     if any(part in {'.venv','__pycache__','.git','data','dist'} for part in rel.parts): return False
     if path.name.startswith(('.env','.DS_Store','._')): return False
     if path.suffix in {'.pyc','.db','.sqlite','.sqlite3','.log'}: return False

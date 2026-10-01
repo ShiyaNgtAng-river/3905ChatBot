@@ -17,7 +17,14 @@ def json_object(text: str) -> dict:
     text = text.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-    obj = json.loads(text)
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError:
+        # Host providers have no JSON mode; tolerate a sentence around the object.
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            raise
+        obj = json.loads(text[start : end + 1])
     if not isinstance(obj, dict):
         raise ModelError("模型必须输出 JSON 对象")
     return obj
@@ -48,11 +55,14 @@ class OpenAICompatible:
         if "thinking" in self.extra_body and self.extra_body["thinking"] not in ({"type":"enabled"}, {"type":"disabled"}):
             raise ValueError("thinking 必须为 type=enabled 或 disabled")
 
-    async def complete(self, system: str, payload: dict, role: str, group: str) -> str:
+    async def complete(self, system: str, payload, role: str, group: str,
+                       timeout: float | None = None, max_tokens: int | None = None) -> str:
+        """Send one system+user request; a str payload is sent verbatim so its prefix can hit the cache."""
+        content = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
         body = {"model": self.model, "messages": [
             {"role": "system", "content": system},
-            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}
-        ], "temperature": 0.2, "max_tokens": int(self.settings.get("max_tokens", 1800))}
+            {"role": "user", "content": content}
+        ], "temperature": 0.2, "max_tokens": int(max_tokens or self.settings.get("max_tokens", 1800))}
         if self.settings.get("json_mode", True):
             body["response_format"] = {"type": "json_object"}
         body.update(self.extra_body)
@@ -70,13 +80,18 @@ class OpenAICompatible:
                 class NoRedirect(urllib.request.HTTPRedirectHandler):
                     def redirect_request(self, *args, **kwargs):
                         return None
-                with urllib.request.build_opener(NoRedirect()).open(req, timeout=float(self.settings.get("timeout", 40))) as r:
+                with urllib.request.build_opener(NoRedirect()).open(req, timeout=float(timeout or self.settings.get("timeout", 40))) as r:
                     data = r.read(2_000_001)
                     if len(data) > 2_000_000:
                         raise ModelError("模型响应过长")
                     return json.loads(data)
             result = await asyncio.to_thread(request)
-            tokens = result.get("usage", {})
+            usage = result.get("usage") or {}
+            # DeepSeek reports prefix-cache hits itself; OpenAI-style servers use details.
+            tokens = {"prompt_tokens": usage.get("prompt_tokens"),
+                      "completion_tokens": usage.get("completion_tokens"),
+                      "cached_tokens": usage.get("prompt_cache_hit_tokens",
+                                                 (usage.get("prompt_tokens_details") or {}).get("cached_tokens"))}
             content = result["choices"][0]["message"]["content"]
             if not isinstance(content, str):
                 raise ModelError("模型没有返回文本")
@@ -95,17 +110,27 @@ class AstrBotProvider:
             raise ValueError("必须显式配置 AstrBot Provider ID")
         self.context, self.model, self.usage = context, provider_id, usage
 
-    async def complete(self, system: str, payload: dict, role: str, group: str) -> str:
-        started, error = time.monotonic(), ""
+    async def complete(self, system: str, payload, role: str, group: str,
+                       timeout: float | None = None, max_tokens: int | None = None) -> str:
+        """Call a host provider; max_tokens is accepted for parity but the host sets it."""
+        started, error, tokens = time.monotonic(), "", {}
         try:
             result = await asyncio.wait_for(self.context.llm_generate(
                 chat_provider_id=self.model, system_prompt=system,
-                prompt=json.dumps(payload, ensure_ascii=False),
-            ), timeout=45)
+                prompt=payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False),
+            ), timeout=timeout or 45)
+            usage = getattr(result, "usage", None)
+            if usage is not None:
+                cached = usage.input_cached
+                raw = getattr(getattr(result, "raw_completion", None), "usage", None)
+                if not cached and raw is not None:
+                    cached = getattr(raw, "prompt_cache_hit_tokens", 0) or 0
+                tokens = {"prompt_tokens": usage.input_other + usage.input_cached,
+                          "completion_tokens": usage.output, "cached_tokens": cached}
             return result.completion_text
         except Exception as exc:
             error = type(exc).__name__
             raise ModelError(f"AstrBot Provider 调用失败：{error}") from None
         finally:
             if self.usage:
-                self.usage(group, role, self.model, {}, time.monotonic() - started, error)
+                self.usage(group, role, self.model, tokens, time.monotonic() - started, error)
