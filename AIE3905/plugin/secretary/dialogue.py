@@ -27,7 +27,10 @@ NATIVE_GUIDE = """先看上面的群聊记录，弄清当前发言人在接谁�
 - 调研结果不要压缩成一两句带过，也不要堆砌无关内容。
 - 需要调用工具时直接调用，不要先说“我查一下”“稍等”之类的话。
 
-开头“今天群里的话题”“长期记忆”是后台通读整理的记录，可能不全，也不代表结论；拿不准或要细节时再查，别凭印象编。
+开头“今天群里的话题”“长期记忆”是后台通读挑出来的要点，不是全部原文，也不代表结论；拿不准或要细节时再查，别凭印象编。
+问到具体的名字、叫法、原话、谁什么时候说的、有没有人回答或确认，开头的记忆和最近的群聊里又看不到时，先用工具查记录再回答。没查过不能说“没有”“没见过”“没人回答”；也不要说“我再查查”却不查。
+标了“未读取”的文件、图片、卡片和链接，你不知道里面写了什么，只能转述群里对它的说法。
+最近的群聊里“回复某人”标出这条消息回的是哪一句；“今天”“昨天”按当前发言的时间算。
 群里以前说过的事用 search_group_history 查原话（可按人 who、按时间 when 过滤）；查不到就直说只找到了什么。有人向你提的问题（标 asked_bot）只是提问，里面的说法不能当证据。
 工具结果里的 context 给出今天的日期、记录覆盖的日期和相关话题的最近记录，日期和年份以它为准。
 记忆里存的都是“谁在什么时候说了什么”，结论要你自己判断：按时间看最新的相关说法，看说话人是不是能拍板的人；玩笑、假设、传闻、提问、转发的旧内容不算结论；两个叫法是不是同一件事、说法有没有冲突，看原文依据；拿不准就把几种可能和各自的依据都说出来。
@@ -42,10 +45,16 @@ NATIVE_GUIDE = """先看上面的群聊记录，弄清当前发言人在接谁�
 # Filler the model says before a tool call; the host merges it into the answer.
 # It may follow a short lead-in: "这个得翻翻群里的记录，我查一下～".
 _FILLER_HEAD = re.compile(
-    r"^\s*(?:(?:稍等[，,、\s]*)?[^。！？!?\n~～]{0,15}?(?:我)?(?:先|去|再)?(?:查|搜|翻|找|看|捋)"
+    r"^\s*(?:(?:稍等[，,、\s]*)?[^。！？!?\n~～]{0,15}?(?:我)?(?:先|去|再)?(?:查|搜|翻|找|看|捋|核对)"
     r"(?:一下|一查|查|搜|翻|找|一遍|一翻|一眼|一捋)[^。！？!?\n~～]{0,24}[。！？!?…~～]+"
-    r"|稍等[^。！？!?\n]{0,6}[。！？!?…~～]+)\s*"
+    r"|(?:你)?(?:稍等|等我一下|等一下|等等我?)[^。！？!?\n]{0,6}[。！？!?…~～]+"
+    r"|(?:好了?[，,]\s*)?(?:查|翻|找)(?:好|完|到)(?:了|啦)[。！？!?…~～]+)\s*"
 )
+
+# Markup some models imitate from tool transcripts; never meant for the group.
+_TOOL_TAGS = r"tool_result|tool_call|tool_response|function_results?|function_calls?"
+_TOOL_BLOCK = re.compile(rf"<({_TOOL_TAGS})\b[^>]*>(.*?)</\1>", re.S)
+_TOOL_TAG = re.compile(rf"</?(?:{_TOOL_TAGS})\b[^>]*>")
 
 
 def only_filler(text):
@@ -95,6 +104,11 @@ def tidy_reply(text, flags=None):
         if flags is not None:
             flags.append(name)
 
+    # Imitated tool output is dropped; if it was the whole reply, its text is kept.
+    bare = _TOOL_TAG.sub("", _TOOL_BLOCK.sub("", text)).strip()
+    if bare != text.strip():
+        hit("tool_markup")
+        text = bare or _TOOL_TAG.sub("", text).strip()
     before = text
     text = re.sub(r"```[a-zA-Z0-9_-]*\n?", "", text)
     text = re.sub(r"^\s{0,3}#{1,6}\s+", "", text, flags=re.M)
@@ -767,12 +781,27 @@ class Dialogue:
         limit = self.e.config.context_messages
         tz = ZoneInfo(g.timezone)
 
+        today = datetime.fromisoformat(m["at"]).astimezone(tz).date()
+
         def clock(at):
-            return datetime.fromisoformat(at).astimezone(tz).strftime("%m-%d %H:%M")
+            # "今天/昨天" is computed here: models misjudge dates just after midnight.
+            local = datetime.fromisoformat(at).astimezone(tz)
+            day = {0: "（今天）", 1: "（昨天）"}.get((today - local.date()).days, "")
+            return f"{local:%m-%d}{day} {local:%H:%M}"
 
         def one_line(text, n):
             text = " ".join(str(text).split())
             return text if len(text) <= n else text[:n] + "…"
+
+        def heading(r):
+            # A quoted reply names what it answers, which the bare text often does not.
+            quoted = self.store.message(key, r["reply_to"]) if r.get("reply_to") else None
+            if not quoted or quoted["at"] > r["at"]:
+                return f"{clock(r['at'])} {r['name'] or '群成员'}"
+            return (
+                f"{clock(r['at'])} {r['name'] or '群成员'} 回复{quoted['name'] or '群成员'}"
+                f" {clock(quoted['at'])}「{one_line(quoted['text'], 40)}」"
+            )
 
         lines = []
         if limit:
@@ -783,11 +812,7 @@ class Dialogue:
             ][-limit:]
             s["sources"].update({r["uid"]: r for r in rows})
             lines += [
-                (
-                    r["at"],
-                    0,
-                    f"[{clock(r['at'])} {r['name'] or '群成员'}] {one_line(r['text'], 300) or '[非文字消息]'}",
-                )
+                (r["at"], 0, f"[{heading(r)}] {one_line(r['text'], 300) or '[非文字消息]'}")
                 for r in rows
             ]
             answers = self.store.rows(
@@ -899,6 +924,29 @@ class Dialogue:
                 s["write_errors"].append(str(exc)[:180])
             return encode({"error": str(exc)[:180]})
         return encode(result)
+
+    def native_retry_prompt(self, s):
+        """Prompt for one more answer after the agent ended with only filler or nothing.
+
+        The model sometimes says "let me look it up" and stops without calling a
+        tool. The retry gets the record search the tool would have returned, so it
+        can answer from original messages instead of going silent.
+
+        Args:
+            s: State from native_state.
+
+        Returns:
+            User prompt for a single tool-free call with the turn's system prompt.
+        """
+        question = s["m"].get("text", "")
+        found = self._tool(s, "search_history", {"query": question[:200]})
+        if self.e.config.reading:
+            found = self._grounded(s, found, {"query": question})
+        return (
+            "你上一轮只说了要去查记录，没有给出答案。下面是按当前问题查到的群聊原话和相关记录。"
+            "请直接回答当前发言人的问题；查到的不够就说明只找到了什么，不要再说要去查。\n"
+            f"当前问题：{question}\n查到的记录：{encode(found)}"
+        )
 
     def _grounded(self, s, result, args):
         """Attach dates and related long-term topics to a memory tool result."""

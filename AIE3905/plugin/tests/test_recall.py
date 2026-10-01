@@ -236,6 +236,38 @@ class RecallTests(unittest.IsolatedAsyncioTestCase):
         bad = json.loads(self.e.conversation.native_tool(s, "search_history", {}))
         self.assertIn("error", bad)
 
+    async def test_recent_chat_names_the_quoted_message_and_relative_day(self):
+        asked = await self.say("yu", "小余", "明天能不能提前刷个2背包开", -60 * 24)
+        self.n += 1
+        self.e.ingest(
+            Message(
+                "demo",
+                "owner",
+                "@小余 可以",
+                (self.base + timedelta(minutes=5)).isoformat(),
+                native_id=f"r{self.n}",
+                name="老张",
+                reply_to=asked.native_id,
+            )
+        )
+        await self.e.flush("demo")
+        s = self.state("有人答复了吗")
+        prompt = self.e.conversation.native_prompt(s, "老张")
+        tz = timezone(timedelta(hours=8))
+        now = datetime.fromisoformat(s["m"]["at"]).astimezone(tz)
+        then = datetime.fromisoformat(asked.at).astimezone(tz)
+        label = {0: "（今天）", 1: "（昨天）"}.get((now.date() - then.date()).days, "")
+        quoted = f"回复小余 {then:%m-%d}{label} {then:%H:%M}「明天能不能提前刷个2背包开」] @小余 可以"
+        self.assertIn(quoted, prompt)
+        self.assertIn(f"时间 {now:%m-%d}（今天） {now:%H:%M}", prompt)
+
+    async def test_retry_prompt_carries_a_search_for_the_question(self):
+        await self.chat()
+        s = self.state("谁负责订大巴")
+        prompt = self.e.conversation.native_retry_prompt(s)
+        self.assertIn("不要再说要去查", prompt)
+        self.assertIn("我负责订大巴", prompt)
+
     async def test_speaker_note_is_injected_only_for_known_members(self):
         await self.chat()
         self.model()

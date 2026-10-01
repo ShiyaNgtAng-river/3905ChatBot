@@ -108,6 +108,7 @@ class PluginHarness(unittest.IsolatedAsyncioTestCase):
             event_message_type=lambda kind: lambda f: f,
             on_llm_request=lambda **kw: lambda f: f,
             on_decorating_result=lambda **kw: lambda f: f,
+            on_llm_response=lambda **kw: lambda f: f,
             llm_tool=lambda name=None, **kw: lambda f: f,
         )
         star_module = types.ModuleType("astrbot.api.star")
@@ -512,6 +513,51 @@ class NativeFrontendTests(PluginHarness):
         ev.result = Result("查到了，一共两版。")
         await self.plugin.finish_group_turn(ev)
         self.assertEqual(ev.result.chain[0].text, "查到了，一共两版。")
+
+    async def test_final_filler_or_empty_answer_is_answered_again(self):
+        calls, answers = [], []
+
+        async def llm_generate(**kw):
+            calls.append(kw)
+            return types.SimpleNamespace(completion_text=answers.pop(0))
+
+        self.plugin.context.llm_generate = llm_generate
+        self.plugin.engine.config.fast_provider = "fast-model"
+        ev = await self.mention("规则发到第几版了", "e1")
+        await self.plugin.inject_group_context(ev, Request(["search_group_history"]))
+        answers.append("第4版，是老张发的。")
+        resp = types.SimpleNamespace(completion_text="我翻翻记录～")
+        await self.plugin.retry_empty_answer(ev, resp)
+        self.assertEqual(resp.completion_text, "第4版，是老张发的。")
+        self.assertEqual(calls[0]["chat_provider_id"], "fast-model")
+        self.assertIn("规则发到第几版了", calls[0]["prompt"])
+        self.assertIn("<group_chat>", calls[0]["system_prompt"])
+        answers.append("我再查查。")
+        empty = types.SimpleNamespace(completion_text="")
+        await self.plugin.retry_empty_answer(ev, empty)
+        self.assertEqual(empty.completion_text, "这次没整理出答案，麻烦再@我问一次～")
+        real = types.SimpleNamespace(completion_text="一共两版。")
+        await self.plugin.retry_empty_answer(ev, real)
+        self.assertEqual(real.completion_text, "一共两版。")
+        self.assertEqual(len(calls), 2)
+        flags = ev.get_extra("groupsecretary_turn")["style_flags"]
+        self.assertEqual(flags["empty_retry"], 2)
+
+    async def test_imitated_tool_markup_and_more_filler_are_removed(self):
+        from contract_plugin.secretary.dialogue import only_filler, tidy_reply
+
+        flags = []
+        text = "<tool_result>查到了～是同一个。</tool_result>\n\n群里都叫LGU杯，公告写成LGU杯（神仙胡杯）。"
+        self.assertEqual(tidy_reply(text, flags), "群里都叫LGU杯，公告写成LGU杯（神仙胡杯）。")
+        self.assertIn("tool_markup", flags)
+        self.assertEqual(tidy_reply("<tool_result>是同一个。</tool_result>"), "是同一个。")
+        self.assertEqual(tidy_reply("你等我一下！是同一个啦～"), "是同一个啦～")
+        self.assertEqual(
+            tidy_reply("用调记录的工具核对一下原话～查好了！一条条来～第一，不能合并。"),
+            "一条条来～第一，不能合并。",
+        )
+        self.assertTrue(only_filler("你等我一下～"))
+        self.assertEqual(tidy_reply("你可以看看群精华。"), "你可以看看群精华。")
 
     async def test_service_phrases_are_trimmed_and_counted_not_hidden(self):
         from contract_plugin.secretary.dialogue import tidy_reply
