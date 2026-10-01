@@ -1,16 +1,91 @@
 """Test-only observability plugin. Installed only inside isolated test runs."""
 
 import asyncio
+import datetime as stdlib_datetime
 import json
 import os
+import sys
 import time
-from datetime import datetime
+import types
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from aiohttp import web
 from astrbot.api.event import filter
 from astrbot.api.star import Star
 from astrbot.core.pipeline.scheduler import PipelineScheduler
+
+
+class VirtualClock:
+    """Replay time for realtime runs: flows at real speed from the last anchor.
+
+    The driver moves the anchor forward over idle gaps; while the system works,
+    virtual time passes exactly as fast as real time, so messages, background
+    memory jobs and answers interleave the way they would in a live group.
+    """
+
+    anchor = None  # (aware UTC virtual time, monotonic seconds)
+
+    @classmethod
+    def now(cls):
+        if cls.anchor is None:
+            return datetime.now(timezone.utc)
+        virtual, real = cls.anchor
+        return virtual + timedelta(seconds=time.monotonic() - real)
+
+
+class VirtualDatetime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        t = VirtualClock.now()
+        return t.astimezone(tz) if tz else t.astimezone().replace(tzinfo=None)
+
+    @classmethod
+    def utcnow(cls):
+        return VirtualClock.now().replace(tzinfo=None)
+
+
+# AstrBot stamps each incoming message with time.time() at receipt, not the
+# OneBot event's own time, so the adapter's clock must follow the replay too.
+RECEIPT_CLOCK_MODULES = {
+    "astrbot.core.platform.sources.aiocqhttp.aiocqhttp_platform_adapter",
+    "astrbot.core.platform.astrbot_message",
+}
+
+
+def install_virtual_clock():
+    """Point the plugin's, the host agent's and the adapter's clocks at VirtualClock.
+
+    Only module globals are rebound, inside this isolated test process. Modules
+    that imported the datetime class get VirtualDatetime; modules that imported
+    the datetime module get a copy of it whose datetime is VirtualDatetime.
+    """
+    shim = types.ModuleType("datetime")
+    shim.__dict__.update(stdlib_datetime.__dict__)
+    shim.datetime = VirtualDatetime
+    clock = types.ModuleType("time")
+    clock.__dict__.update(time.__dict__)
+    clock.time = lambda: VirtualClock.now().timestamp()
+    patched = []
+    for name in RECEIPT_CLOCK_MODULES:
+        module = sys.modules.get(name)
+        if module is not None and getattr(module, "time", None) is time:
+            module.time = clock
+            patched.append(name)
+    for name, module in list(sys.modules.items()):
+        if not module or not (
+            "astrbot_plugin_groupsecretary" in name
+            or name == "astrbot.core.astr_main_agent"
+        ):
+            continue
+        current = getattr(module, "datetime", None)
+        if current is stdlib_datetime.datetime:
+            module.datetime = VirtualDatetime
+            patched.append(name)
+        elif current is stdlib_datetime:
+            module.datetime = shim
+            patched.append(name)
+    return patched
 
 
 class TestLabBridge(Star):
@@ -21,6 +96,8 @@ class TestLabBridge(Star):
         self.done, self.calls, self.traces = {}, [], []
         self.denied = 0
         self.limit = int(os.environ["GROUPBOT_TEST_CALL_LIMIT"])
+        self.virtual = os.environ.get("GROUPBOT_TEST_VIRTUAL_CLOCK") == "1"
+        self.pipelines, self.memory_task, self.memory_jobs = 0, None, []
         self.original_execute = PipelineScheduler.execute
         owner = self
 
@@ -28,6 +105,7 @@ class TestLabBridge(Star):
             mid = str(event.message_obj.message_id)
             started = time.monotonic()
             error = None
+            owner.pipelines += 1
             try:
                 await owner.original_execute(scheduler, event)
                 plugin = owner.plugin()
@@ -40,6 +118,7 @@ class TestLabBridge(Star):
                 error = type(exc).__name__
                 raise
             finally:
+                owner.pipelines -= 1
                 owner.done[mid] = {
                     "seconds": round(time.monotonic() - started, 3),
                     "error": error,
@@ -110,6 +189,9 @@ class TestLabBridge(Star):
         app.router.add_get("/snapshot", self.snapshot)
         app.router.add_get("/message/{mid}", self.message)
         app.router.add_post("/memory", self.memory)
+        app.router.add_post("/clock", self.clock)
+        app.router.add_post("/tick", self.tick)
+        app.router.add_get("/busy", self.busy)
         self.runner = web.AppRunner(app, access_log=None)
         await self.runner.setup()
         site = web.TCPSite(self.runner, "127.0.0.1", 0)
@@ -173,6 +255,65 @@ class TestLabBridge(Star):
         else:
             raise web.HTTPBadRequest(text="Unknown memory action")
         return web.json_response({"result": result})
+
+    async def clock(self, request):
+        """Move the virtual clock; realtime runs only."""
+        if not self.virtual:
+            raise web.HTTPBadRequest(text="Virtual clock is off for this run")
+        p = await request.json()
+        at = datetime.fromisoformat(p["now"])
+        if at.tzinfo is None:
+            raise web.HTTPBadRequest(text="now must include a timezone")
+        if not getattr(self, "patched", None):
+            self.patched = install_virtual_clock()
+        VirtualClock.anchor = (at.astimezone(timezone.utc), time.monotonic())
+        return web.json_response({"now": VirtualClock.now().isoformat(), "patched": len(self.patched)})
+
+    async def tick(self, request):
+        """One iteration of the plugin's own memory loop, on the virtual clock.
+
+        The production loop tries reading, consolidation and rollup in that order
+        and stops after the first job that did work; this calls the same methods
+        through the same backoff wrapper. The job runs in the background so the
+        replay keeps flowing while the model works.
+        """
+        if not self.virtual:
+            raise web.HTTPBadRequest(text="Virtual clock is off for this run")
+        if self.memory_task and not self.memory_task.done():
+            return web.json_response({"running": True})
+        e = self.plugin().engine
+
+        async def loop_once():
+            started, at = time.monotonic(), VirtualClock.now().isoformat()
+            for name, job in (
+                ("read", e.reader.read),
+                ("consolidate", e.reader.consolidate),
+                ("rollup", e.reader.rollup),
+            ):
+                if await e._background("sandbox", name, job):
+                    self.memory_jobs.append(
+                        {"job": name, "virtual_at": at, "seconds": round(time.monotonic() - started, 3)}
+                    )
+                    return name
+            return None
+
+        self.memory_task = asyncio.create_task(loop_once())
+        await asyncio.sleep(0)
+        return web.json_response({"running": False})
+
+    async def busy(self, request):
+        memory = bool(self.memory_task and not self.memory_task.done())
+        calls = sum(c["status"] == "running" for c in self.calls)
+        return web.json_response(
+            {
+                "busy": bool(self.pipelines or calls or memory),
+                "pipelines": self.pipelines,
+                "calls": calls,
+                "memory": memory,
+                "memory_jobs": self.memory_jobs,
+                "now": VirtualClock.now().isoformat(),
+            }
+        )
 
     @filter.on_using_llm_tool()
     async def tool_start(self, event, tool, tool_args):

@@ -52,6 +52,11 @@ def validate_rows(rows):
                 raise ValueError("timestamp 必须带时区")
         if row.get("kind") == "recall" and not row.get("target_id"):
             raise ValueError("撤回需要 target_id")
+        mentions = row.get("mentions", [])
+        if not isinstance(mentions, list) or not all(
+            isinstance(m, dict) and isinstance(m.get("sender"), (str, int)) for m in mentions
+        ):
+            raise ValueError("mentions 必须是 {sender, name} 对象数组")
         if row.get("attachments"):
             raise ValueError("此版本回放文字、引用和撤回；附件请转为明确的文字占位")
         if "expect" in row:
@@ -141,6 +146,41 @@ def host_models(host):
                 "key": ["$" + variable],
                 "custom_headers": {},
                 "custom_extra_body": merged.get("custom_extra_body", {}),
+                "timeout": 180,
+            }
+        )
+    return models, env
+
+
+ROLES = ["main", "fast", "strong", "reply_fast", "reply_deep"]
+
+
+def env_models(settings):
+    """Models for one OpenAI-compatible endpoint, with the key from an environment variable.
+
+    settings: {"base_url", "key_env", "models": {role: model_id}}; roles left out
+    use models["main"]. Like host mode, the key travels only in child environments.
+    """
+    key = os.environ.get(settings["key_env"], "")
+    if not key:
+        raise ValueError(f"未找到环境变量 {settings['key_env']}；请在运行环境中设置模型 Key")
+    models, env = [], {}
+    for role in ROLES:
+        variable = "GROUPBOT_TEST_KEY_" + role.upper()
+        env[variable] = key
+        models.append(
+            {
+                "id": "test-" + role,
+                "provider": "openai",
+                "type": "openai_chat_completion",
+                "provider_type": "chat_completion",
+                "enable": True,
+                "proxy": "",
+                "api_base": settings["base_url"],
+                "model": settings["models"].get(role) or settings["models"]["main"],
+                "key": ["$" + variable],
+                "custom_headers": {},
+                "custom_extra_body": settings.get("extra_body", {}),
                 "timeout": 180,
             }
         )
@@ -298,6 +338,7 @@ class Worker:
             GROUPBOT_TEST_RUN=str(self.path),
             GROUPBOT_TEST_BRIDGE_TOKEN=self.token,
             GROUPBOT_TEST_CALL_LIMIT=str(self.spec["model_limit"]),
+            GROUPBOT_TEST_VIRTUAL_CLOCK="1" if self.spec.get("realtime") else "0",
             PYTHONDONTWRITEBYTECODE="1",
         )
         if self.manager.model_mode == "mock":
@@ -327,7 +368,11 @@ class Worker:
             )
             self.procs.append(proc)
         else:
-            models, keys = host_models(self.manager.host)
+            models, keys = (
+                env_models(self.manager.env_settings)
+                if self.manager.model_mode == "env"
+                else host_models(self.manager.host)
+            )
             env.update(keys)
         agent_cfg = json.loads((ROOT / "config/host_subagents.json").read_text())
         # Search is an independent external service; this lab exercises group memory.
@@ -378,6 +423,26 @@ class Worker:
         save(data / "cmd_config.json", cfg)
         pdata = data / "plugin_data/astrbot_plugin_groupsecretary"
         pdata.mkdir(parents=True)
+        # A study can mirror the pilot group's memory and dialogue tuning; providers,
+        # the front end and the memory scheduler stay under the test lab's control.
+        overrides = self.spec.get("plugin_overrides", {})
+        memory = {
+            **overrides.get("memory", {}),
+            "reading": True,
+            "start_delay_seconds": 864000,
+        }
+        if memory.get("qa_list"):
+            shutil.copy2(ROOT / "config" / memory["qa_list"], pdata / memory["qa_list"])
+        dialogue = {
+            **{
+                k: v
+                for k, v in overrides.get("dialogue", {}).items()
+                if k not in {"fast_provider", "deep_provider", "frontend"}
+            },
+            "frontend": "astrbot",
+            "fast_provider": "test-reply_fast",
+            "deep_provider": "test-reply_deep",
+        }
         save(
             pdata / "config.json",
             {
@@ -408,12 +473,8 @@ class Worker:
                     "consolidating": {"provider_id": "test-strong"},
                 },
                 "web": {"enabled": False},
-                "dialogue": {
-                    "frontend": "astrbot",
-                    "fast_provider": "test-reply_fast",
-                    "deep_provider": "test-reply_deep",
-                },
-                "memory": {"reading": True, "start_delay_seconds": 864000},
+                "dialogue": dialogue,
+                "memory": memory,
             },
         )
         logfile = open(self.path / "astrbot.log", "w")
@@ -535,6 +596,90 @@ class Worker:
                 )
             )
 
+    def message_event(self, row, mid, user, epoch):
+        """The OneBot group message for one row; also remembered for get_msg."""
+        segments = []
+        if row.get("reply_to"):
+            ref = self.ids.get(str(row["reply_to"]))
+            if (
+                ref is None
+                and str(row["reply_to"]).isdigit()
+                and int(row["reply_to"]) in self.messages
+            ):
+                ref = int(row["reply_to"])
+            if ref is None:
+                raise ValueError("引用目标不存在于该批次")
+            segments.append({"type": "reply", "data": {"id": str(ref)}})
+        if row.get("at"):
+            segments.append({"type": "at", "data": {"qq": str(BOT)}})
+        # Mentions of other members are real at segments, which the plugin drops
+        # from the stored text exactly as it does for a QQ message.
+        for m in row.get("mentions", []):
+            known = dict(self.names)
+            uid = self.user(m["sender"], m.get("name"))
+            if uid in known:
+                self.names[uid] = known[uid]  # a mention never renames a known member
+            segments.append({"type": "at", "data": {"qq": str(uid)}})
+        segments.append({"type": "text", "data": {"text": row.get("text", "")}})
+        event = {
+            "time": epoch,
+            "self_id": BOT,
+            "post_type": "message",
+            "message_type": "group",
+            "sub_type": "normal",
+            "message_id": mid,
+            "group_id": GROUP,
+            "user_id": user,
+            "anonymous": None,
+            "message": segments,
+            "raw_message": row.get("text", ""),
+            "font": 0,
+            "sender": {
+                "user_id": user,
+                "nickname": self.names[user],
+                "card": "",
+                "role": "member",
+            },
+        }
+        self.messages[mid] = {k: v for k, v in event.items() if k != "post_type"}
+        return event
+
+    async def deliver(self, row, question=False):
+        """Send one group message without waiting for it to be processed.
+
+        Realtime replays use this: the stream keeps flowing while the plugin and
+        the host work. A question also opens a completion marker and tags the
+        replies that follow, so they can be attributed to it.
+        """
+        validate_rows([row])
+        if row.get("kind") == "recall":
+            raise ValueError("实时回放暂不支持撤回事件")
+        mid = self.allocate(row.get("native_id"))
+        user = self.user(row.get("sender", "owner"), row.get("name"))
+        epoch = int(
+            datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00")).timestamp()
+        )
+        if question:
+            await self.api("POST", "/begin/" + str(mid), {})
+            self.current = str(mid)
+        self.timeline.append(
+            {
+                "role": "user",
+                "sender": self.names[user],
+                "text": row.get("text", ""),
+                "mention": row.get("at", False),
+                "message_id": mid,
+                "at": time.time(),
+                "timestamp": epoch,
+                "kind": "message",
+            }
+        )
+        await self.ws.send(
+            json.dumps(self.message_event(row, mid, user, epoch), ensure_ascii=False)
+        )
+        self.progress += 1
+        return mid
+
     async def step(self, row):
         validate_rows([row])
         async with self.lock:
@@ -599,44 +744,7 @@ class Worker:
                 self.snapshot = await self.api("GET", "/snapshot")
             else:
                 await self.api("POST", "/begin/" + str(mid), {})
-                segments = []
-                if row.get("reply_to"):
-                    ref = self.ids.get(str(row["reply_to"]))
-                    if (
-                        ref is None
-                        and str(row["reply_to"]).isdigit()
-                        and int(row["reply_to"]) in self.messages
-                    ):
-                        ref = int(row["reply_to"])
-                    if ref is None:
-                        raise ValueError("引用目标不存在于该批次")
-                    segments.append({"type": "reply", "data": {"id": str(ref)}})
-                if row.get("at"):
-                    segments.append({"type": "at", "data": {"qq": str(BOT)}})
-                segments.append({"type": "text", "data": {"text": text}})
-                event = {
-                    "time": epoch,
-                    "self_id": BOT,
-                    "post_type": "message",
-                    "message_type": "group",
-                    "sub_type": "normal",
-                    "message_id": mid,
-                    "group_id": GROUP,
-                    "user_id": user,
-                    "anonymous": None,
-                    "message": segments,
-                    "raw_message": text,
-                    "font": 0,
-                    "sender": {
-                        "user_id": user,
-                        "nickname": self.names[user],
-                        "card": "",
-                        "role": "member",
-                    },
-                }
-                self.messages[mid] = {
-                    k: v for k, v in event.items() if k != "post_type"
-                }
+                event = self.message_event(row, mid, user, epoch)
                 await self.ws.send(json.dumps(event, ensure_ascii=False))
                 end = time.monotonic() + 240
                 while True:
@@ -712,9 +820,10 @@ class Worker:
 
 
 class Manager:
-    def __init__(self, host, home, model_mode, parallel):
+    def __init__(self, host, home, model_mode, parallel, env_settings=None):
         self.host, self.home = Path(host).resolve(), Path(home).resolve()
         self.model_mode, self.parallel = model_mode, parallel
+        self.env_settings = env_settings
         self.home.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.slots = asyncio.Semaphore(parallel)
         self.runs, self.archived = {}, {}

@@ -100,6 +100,39 @@ python3 tools/testlab/client.py tools/testlab/example.json --copies 2 --model-li
 
 客户端只依赖 Python 标准库。报告位于 `.sandbox/testlab/<批次ID>/report.json`；数据库位于同目录下 `root/data/plugin_data/astrbot_plugin_groupsecretary/secretary.sqlite3`。停止服务器后再启动仍能查看旧报告；正在运行的会话不会自动续跑。
 
+## 实时记忆研究
+
+`realtime.py` 把一份真实群聊导出（QQChatExporter 的 JSON）按时间顺序一条一条送进隔离的 AstrBot 和插件。到了问题文件里设定的节点，就以一个群友的身份 @ 机器人提问，群聊同时继续往下走；程序按标准答案判分，最后画出“正确率随消息数量的变化”。不需要先启动测试台网页。
+
+```sh
+cd AIE3905
+python3 tools/testlab/realtime.py --astrbot /Users/tangshiyang/CUHKSZ/AstrBot/AstrBot-master \
+  --model host --export ~/Downloads/group_xxx.json --questions ~/Downloads/questions.json
+```
+
+- `--model host` 按 `config/qq.json` 的路由使用宿主里配置好的模型服务（例如 `deepseek_pro`）；记忆与对话参数（通读阈值、整合时间、上下文条数、深度关键词）也照抄试点群配置，`--no-mirror-pilot` 关闭。
+- `--model env --base-url ... --main-model ... --fast-model ...` 直接调用 OpenAI 兼容接口，Key 从 `GROUPBOT_MODEL_API_KEY` 读取。`--model mock` 只验证流程。
+- `--limit 300` 只回放导出里原始序号前 300 条，用来试跑。`--hold` 让提问时后续消息暂停，作为对照。
+- `--max-calls` 是整次运行的模型调用上限，默认 900。全量 884 条、61 个问题大约需要几百次调用。
+- 结果写入 `.sandbox/realtime/<时间>/`：`results.json`（逐题问答、判分、用量、后台任务）和 `report.html`（图表和逐题结果）。两者都含群聊原文，不要提交到 Git。`--report-only results.json` 可在修改判分后重新出图。
+
+时间：插件、宿主 agent 和适配器在隔离进程里使用一个虚拟时钟，从第一条消息的时间开始。只要有任何工作在进行（处理消息、后台通读或整合、回答问题），虚拟时间就按真实速度流动，这段时间里该到的消息照常送达；全部空闲时才跳到下一条消息。后台记忆按插件自己的触发条件（新增字数、空闲时间、凌晨整合）在这个时钟上运行。效果等于实时回放，只是剪掉了没人干活的时间。
+
+与真实 QQ 的差别：
+
+- 图片、文件、卡片、转发只送占位文字，例如“[图片]”“[文件]”；插件在 QQ 上本来也读不到文件名和卡片内容。@ 其他成员按真实的 @ 消息段发送，插件会和线上一样把它从文字里去掉。
+- 撤回的消息和系统通知不回放（导出里没有撤回前的原文）。
+- 问题按顺序一个一个问，上一个回答完才问下一个。同一事实在多个节点重复提问时，机器人能看到自己之前的回答，这和真实群里一样，但会让后面的复测偏乐观。
+
+问题文件是 JSON 数组，每题一个对象：
+
+```json
+{"id": "q01", "after": 66, "level": 2, "ask": "群里有人说一件阿迪T恤多少钱？", "facts": [21],
+ "expect": [{"since": 1, "all": [["329"]], "none": []}], "review": ""}
+```
+
+`after` 是导出里的原始序号，回放到这条之后提问；`facts` 是答案依据的原始序号，用来计算“事实距离”；`level` 1–5 分别是近期直述、远期直述、关联推理、更新与时间、陷阱与拒答。`expect` 按 `since` 选取提问时生效的标准答案：`all` 里每一组同义词至少命中一个，`none` 里的说法一个都不能出现；`"$DECLINE"` 代表一组表示“没有／不知道”的说法。判分前统一全角半角和大小写、去掉空白。`review` 写给人工复核的说明。
+
 ## 验证
 
 ```sh
