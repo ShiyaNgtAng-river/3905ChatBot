@@ -282,8 +282,10 @@ class RecallTests(unittest.IsolatedAsyncioTestCase):
                 )
         s = self.state("你又记错了")
         prompt = self.e.conversation.native_prompt(s, "老张")
-        self.assertIn("你最近几条回复里已经用过这些说法：「我改」", prompt)
+        self.assertNotIn("已经用过这些说法", prompt)  # not buried in the system prompt
         self.assertEqual(s["avoid"], ["我改"])
+        self.assertIn("你最近几条回复里已经用过这些说法：「我改」", self.e.conversation.native_reminder(s))
+        self.assertEqual(self.e.conversation.native_reminder(self.state("你好")), "")
 
     async def test_retry_prompt_carries_a_search_for_the_question(self):
         await self.chat()

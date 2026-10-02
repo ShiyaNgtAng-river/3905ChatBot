@@ -341,6 +341,16 @@ class GroupSecretary(Star):
             + self.engine.conversation.native_prompt(state, event.get_sender_name())
         )
         state["system_prompt"] = req.system_prompt
+        # Next to the current message, not saved to history: a note at the end of the long
+        # system prompt did not stop the model from repeating itself.
+        reminder = self.engine.conversation.native_reminder(state)
+        if reminder and hasattr(req, "extra_user_content_parts"):
+            try:
+                from astrbot.core.agent.message import TextPart
+            except ImportError:
+                TextPart = None
+            if TextPart is not None:
+                req.extra_user_content_parts.append(TextPart(text=reminder).mark_as_temp())
         # A configured subagent owns its tools so the router cannot bypass it.
         for handoff, prefixes in DELEGATED.items():
             if handoff in names:

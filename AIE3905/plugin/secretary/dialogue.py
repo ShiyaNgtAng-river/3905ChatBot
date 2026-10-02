@@ -978,13 +978,23 @@ class Dialogue:
             parts.append(
                 f"当前消息里有“{'”“'.join(words)}”：这次按深度调研的方式回答。"
             )
-        if s.get("avoid"):
-            parts.append(
-                "你最近几条回复里已经用过这些说法：「" + "」「".join(s["avoid"]) + "」。这次别再用。"
-                "真要认错就换个方式：说清是哪里错了、问一句是哪句、自嘲一句或者撒个娇；没必要认错就不认。"
-            )
         parts.append(NATIVE_GUIDE)
         return "\n".join(parts)
+
+    def native_reminder(self, s):
+        """One-turn note naming phrases the bot just kept repeating, or "" when there are none.
+
+        It goes next to the current message rather than into the long system prompt:
+        placed at the end of the system prompt it was read and ignored (lab replay).
+        Call after native_prompt, which fills s["avoid"].
+        """
+        if not s.get("avoid"):
+            return ""
+        return (
+            "（提醒，不是群友的话）你最近几条回复里已经用过这些说法：「" + "」「".join(s["avoid"])
+            + "」。这次别再用。真要认错就换个方式：说清是哪里错了、问一句是哪句、自嘲一句或者撒个娇；"
+            "没必要认错就不认。"
+        )
 
     def native_tool(self, s, name, args):
         """Run one validated tool for the host agent and return JSON text.

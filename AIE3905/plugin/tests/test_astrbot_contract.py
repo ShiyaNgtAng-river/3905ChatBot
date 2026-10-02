@@ -126,6 +126,9 @@ class PluginHarness(unittest.IsolatedAsyncioTestCase):
                 "astrbot.api": types.ModuleType("astrbot.api"),
                 "astrbot.api.event": event_module,
                 "astrbot.api.star": star_module,
+                "astrbot.core": types.ModuleType("astrbot.core"),
+                "astrbot.core.agent": types.ModuleType("astrbot.core.agent"),
+                "astrbot.core.agent.message": types.SimpleNamespace(TextPart=TextPart),
                 "contract_plugin": package,
             },
         )
@@ -233,10 +236,20 @@ class ToolSet:
         self.tools.remove(name)
 
 
+class TextPart:
+    def __init__(self, text):
+        self.text, self.temp = text, False
+
+    def mark_as_temp(self):
+        self.temp = True
+        return self
+
+
 class Request:
     def __init__(self, names=()):
         self.func_tool = ToolSet(names)
         self.system_prompt = "persona"
+        self.extra_user_content_parts = []
         self.contexts = [
             {"role": "user", "content": "persona example", "_no_save": True},
             {"role": "user", "content": "stale host history"},
@@ -558,6 +571,20 @@ class NativeFrontendTests(PluginHarness):
         )
         self.assertTrue(only_filler("你等我一下～"))
         self.assertEqual(tidy_reply("你可以看看群精华。"), "你可以看看群精华。")
+
+    async def test_repeat_reminder_goes_next_to_the_message_and_is_not_saved(self):
+        ev = await self.mention("你又记错了", "rr1")
+        with self.plugin.engine.store.tx() as db:
+            db.execute(
+                "INSERT INTO answers(id,group_key,actor,at,question,output,sources,item_ids,mode,trace) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                ("r1", "demo", "owner", datetime.now(timezone.utc).isoformat(), "q", "好，我改。", "[]", "[]", "native", "{}"),
+            )
+        req = Request(["search_group_history"])
+        await self.plugin.inject_group_context(ev, req)
+        notes = [p for p in req.extra_user_content_parts if "我改" in p.text]
+        self.assertEqual(len(notes), 1)
+        self.assertTrue(notes[0].temp)
+        self.assertNotIn("已经用过这些说法", req.system_prompt)
 
     async def test_english_narration_before_a_tool_call_is_removed(self):
         from contract_plugin.secretary.dialogue import only_filler, tidy_reply
