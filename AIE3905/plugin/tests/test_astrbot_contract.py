@@ -585,6 +585,12 @@ class NativeFrontendTests(PluginHarness):
         self.assertEqual(len(notes), 1)
         self.assertTrue(notes[0].temp)
         self.assertNotIn("已经用过这些说法", req.system_prompt)
+        # It names the phrases only; suggesting "ask which line" taught the bot to ask back.
+        self.assertNotIn("问一句", notes[0].text)
+        self.assertIn("换个说法", notes[0].text)
+        # The research format is for explicit requests, not every technical question.
+        self.assertIn("只有对方明确要深度的回答", req.system_prompt)
+        self.assertNotIn("专业领域的询问", req.system_prompt)
 
     async def test_english_narration_before_a_tool_call_is_removed(self):
         from contract_plugin.secretary.dialogue import only_filler, tidy_reply

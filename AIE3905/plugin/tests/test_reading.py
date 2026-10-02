@@ -383,6 +383,134 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         for table in ("day_views", "digests", "anchor_topics", "anchor_facts", "lexicon"):
             self.assertEqual(self.e.store.rows(f"SELECT 1 FROM {table}"), [], table)
 
+    def answer(self, ident, when, output, sources=()):
+        """A stored reply of the bot, as the dialogue layer writes it."""
+        with self.e.store.tx() as db:
+            db.execute(
+                "INSERT INTO answers(id,group_key,actor,at,question,output,sources,item_ids,mode,trace) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (ident, "demo", "owner", when.astimezone(timezone.utc).isoformat(), "q", output,
+                 json.dumps(list(sources)), "[]", "native", "{}"),
+            )
+
+    async def distilled_day(self):
+        """Day one consolidated, a reply of the bot and a reaction to it, then distilled."""
+        s = await self.first_day()
+        await self.consolidate_first_day(s)
+        self.answer("a1", at(5, 9, 6), "周六八点东门，记住啦～")
+        react = await self.say("owner", "老张", "哈哈这回靠谱", at(5, 9, 7), reply_to="a1")
+        seen = []
+
+        def portrait(payload):
+            seen.append(payload)
+            return {
+                "people": [
+                    {"ref": "p1", "name": "老张", "text": "常定时间地点，说话干脆，被答对了会夸人", "m": [s[1], react]},
+                    {"ref": "new", "name": "小余", "text": "爱接梗，管东门叫老地方", "m": [s[2]]},
+                    {"ref": "new", "name": "没这个人", "text": "编的", "m": [s[0]]},
+                    {"ref": "new", "name": "小林", "text": "没有依据"},
+                ],
+                "lessons": [
+                    {"ref": "new", "about": "", "text": "时间地点一句话说清会被夸", "m": [react]},
+                    {"ref": "new", "about": "老张", "text": "老张喜欢干脆的回答", "m": [react]},
+                    {"ref": "new", "about": "", "text": "没有依据的心得", "m": [424242]},
+                ],
+                "terms": [{"term": "老地方", "meaning": "学校东门，小余常这么叫", "m": [s[2]]}],
+                "style": {"text": "轻松，爱用哈哈接话", "m": [s[3]]},
+            }
+
+        self.model(portrait)
+        self.assertEqual(self.r.due_distill("demo"), "2026-10-05")
+        self.assertEqual(await self.r.distill("demo", at(6, 6)), "2026-10-05")
+        return s, react, seen[0]
+
+    async def test_distill_learns_people_terms_and_lessons_from_reactions(self):
+        s, react, payload = await self.distilled_day()
+        # The reader sees the bot's own reply in place, and the reaction to it.
+        self.assertIn("[09:06 爱音（你）] 周六八点东门，记住啦～", payload)
+        self.assertIn("哈哈这回靠谱 ↩助手的回复", payload)
+        self.assertIn("p1 老张：常负责定时间和地点", payload)  # the old impression, to be merged
+        self.assertIsNone(self.r.due_distill("demo"))
+        people = {p["name"]: p for p in self.e.store.rows("SELECT name,summary,sources FROM profiles")}
+        self.assertEqual(set(people), {"老张", "小余"})
+        self.assertEqual(people["老张"]["summary"], "常定时间地点，说话干脆，被答对了会夸人")
+        self.assertEqual(json.loads(people["老张"]["sources"]), [s[1], react])
+        lessons = self.e.store.rows("SELECT about,text FROM lessons ORDER BY id")
+        self.assertEqual(lessons, [{"about": "", "text": "时间地点一句话说清会被夸"},
+                                   {"about": "owner", "text": "老张喜欢干脆的回答"}])
+        terms = {w["term"]: w["meaning"] for w in self.e.store.rows("SELECT term,meaning FROM lexicon")}
+        self.assertEqual(terms["老地方"], "学校东门，小余常这么叫")
+        self.assertEqual(terms["（说话风格）"], "轻松，爱用哈哈接话")
+
+    async def test_distill_rewrites_drops_and_keeps_the_newest_within_limits(self):
+        s, react, _ = await self.distilled_day()
+        group, mine = (self.e.store.one("SELECT id FROM lessons WHERE about=?", (a,))["id"] for a in ("", "owner"))
+        payloads = []
+
+        def again(payload):
+            payloads.append(payload)
+            return {"lessons": [
+                {"ref": f"l{group}", "drop": True},
+                {"ref": f"l{mine}", "about": "老张", "text": "老张喜欢先听结论", "m": [react]},
+                *[{"ref": "new", "about": "老张", "text": f"新心得{i}", "m": [react]} for i in range(3)],
+            ]}
+
+        self.model(again)
+        self.assertEqual(await self.r.distill_day("demo", "2026-10-05", at(6, 7)), "2026-10-05")
+        self.assertIn(f"l{mine}（对老张）老张喜欢干脆的回答", payloads[0])
+        self.assertIsNone(self.e.store.one("SELECT 1 FROM lessons WHERE about=''"))
+        texts = [x["text"] for x in self.e.store.rows("SELECT text FROM lessons WHERE about='owner'")]
+        self.assertEqual(len(texts), 3)  # person limit: the one confirmed longest ago went
+        self.assertNotIn("老张喜欢先听结论", texts)
+
+    async def test_expiry_trims_the_portrait_and_recall_removes_it(self):
+        s, react, _ = await self.distilled_day()
+        first = self.e.store.one("SELECT uid FROM messages WHERE seq=?", (s[0],))["uid"]
+        self.answer("a0", at(5, 9, 1), "用到了一条会到期的消息", [first])
+        self.answer("a2", at(5, 9, 20), "没用到它")
+        # Messages before 10-05 09:06 expire; 老张's impression keeps its later evidence.
+        self.e.store.expire("demo", 1, now=at(6, 9, 6).astimezone(timezone.utc))
+        note = self.e.store.one("SELECT sources FROM profiles WHERE sender='owner'")
+        self.assertEqual(json.loads(note["sources"]), [react])
+        self.assertEqual(len(self.e.store.rows("SELECT 1 FROM lessons")), 2)
+        self.assertEqual({a["id"] for a in self.e.store.rows("SELECT id FROM answers")}, {"a1", "a2"})
+        # A recall is not routine: everything derived from the message goes.
+        self.e.store.recall("demo", f"n{self.n}")
+        self.assertIsNone(self.e.store.one("SELECT 1 FROM profiles WHERE sender='owner'"))
+        self.assertEqual(self.e.store.rows("SELECT 1 FROM lessons"), [])
+        self.assertEqual(self.e.store.rows("SELECT 1 FROM answers"), [])
+
+    async def test_opting_out_removes_lessons_about_the_person(self):
+        s, _, _ = await self.distilled_day()
+        # Lessons drawn from someone else's message: only the one about 老张 goes.
+        with self.e.store.tx() as db:
+            for about, text in (("owner", "关于老张、依据是小余的话"), ("", "全群的、依据是小余的话")):
+                db.execute(
+                    "INSERT INTO lessons(group_key,about,text,sources,first_day,last_day,updated_at) VALUES('demo',?,?,?,?,?,?)",
+                    (about, text, json.dumps([s[2]]), "2026-10-05", "2026-10-05", at(6, 6).isoformat()),
+                )
+        self.e.store.optout("demo", "owner")
+        self.assertEqual([x["text"] for x in self.e.store.rows("SELECT text FROM lessons")], ["全群的、依据是小余的话"])
+        self.assertIsNone(self.e.store.one("SELECT 1 FROM profiles WHERE sender='owner'"))
+
+    async def test_replies_carry_impressions_lessons_and_todays_feedback(self):
+        await self.distilled_day()
+        with self.e.store.tx() as db:
+            view = json.loads(db.execute("SELECT sidebar FROM day_views WHERE day='2026-10-05'").fetchone()["sidebar"])
+            view["feedback"] = [{"text": "老张嫌爱音回复太长", "m": [1]}]
+            db.execute("UPDATE day_views SET sidebar=? WHERE day='2026-10-05'", (json.dumps(view, ensure_ascii=False),))
+        prompt = self.e.conversation.native_prompt(self.state("小余说的老地方在哪", when=at(5, 12)), "老张")
+        memory = prompt[: prompt.index("</group_memory>")]
+        self.assertIn("你对大家的印象", memory)
+        self.assertIn("- 老张：常定时间地点", memory)  # the speaker first
+        self.assertIn("- 小余：爱接梗", memory)  # named in the message
+        self.assertIn("- （对老张）老张喜欢干脆的回答", memory)
+        self.assertIn("- 时间地点一句话说清会被夸", memory)
+        self.assertIn("- 老张嫌爱音回复太长", memory)
+        self.e.config.core_chars = 30
+        core = self.r.portrait_lines("demo", "", at(5, 12).isoformat(), ["owner"])
+        self.assertEqual(core, ["你对大家的印象（平时聊天里慢慢攒下的看法，不是事实记录；用来懂人，别复述给对方听）：",
+                                "- 老张：常定时间地点，说话干脆，被答对了会夸人"])
+
     async def test_failed_job_backs_off(self):
         async def boom(key):
             raise RuntimeError("network")
