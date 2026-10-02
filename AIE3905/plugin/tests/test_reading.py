@@ -405,7 +405,7 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
             return {
                 "people": [
                     {"ref": "p1", "name": "老张", "text": "常定时间地点，说话干脆，被答对了会夸人", "m": [s[1], react]},
-                    {"ref": "new", "name": "小余", "text": "爱接梗，管东门叫老地方", "m": [s[2]]},
+                    {"ref": "new", "name": "小余", "text": "爱接梗，今天管东门叫老地方", "m": [s[2]]},
                     {"ref": "new", "name": "没这个人", "text": "编的", "m": [s[0]]},
                     {"ref": "new", "name": "小林", "text": "没有依据"},
                 ],
@@ -434,6 +434,9 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(people), {"老张", "小余"})
         self.assertEqual(people["老张"]["summary"], "常定时间地点，说话干脆，被答对了会夸人")
         self.assertEqual(json.loads(people["老张"]["sources"]), [s[1], react])
+        # Relative days are pinned to the distilled day, in the portrait's date format.
+        self.assertEqual(people["小余"]["summary"], "爱接梗，〔10-05〕管东门叫老地方")
+        self.assertIn("任务：2026-10-05（记作〔10-05〕）这一天结束了", payload)
         lessons = self.e.store.rows("SELECT about,text FROM lessons ORDER BY id")
         self.assertEqual(lessons, [{"about": "", "text": "时间地点一句话说清会被夸"},
                                    {"about": "owner", "text": "老张喜欢干脆的回答"}])
@@ -456,7 +459,8 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
 
         self.model(again)
         self.assertEqual(await self.r.distill_day("demo", "2026-10-05", at(6, 7)), "2026-10-05")
-        self.assertIn(f"l{mine}（对老张）老张喜欢干脆的回答", payloads[0])
+        self.assertIn(f"l{mine}（对老张，〔10-05〕）老张喜欢干脆的回答", payloads[0])
+        self.assertIn("老张（截至〔10-05〕）：常定时间地点", payloads[0])
         self.assertIsNone(self.e.store.one("SELECT 1 FROM lessons WHERE about=''"))
         texts = [x["text"] for x in self.e.store.rows("SELECT text FROM lessons WHERE about='owner'")]
         self.assertEqual(len(texts), 3)  # person limit: the one confirmed longest ago went
@@ -501,15 +505,15 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         prompt = self.e.conversation.native_prompt(self.state("小余说的老地方在哪", when=at(5, 12)), "老张")
         memory = prompt[: prompt.index("</group_memory>")]
         self.assertIn("你对大家的印象", memory)
-        self.assertIn("- 老张：常定时间地点", memory)  # the speaker first
-        self.assertIn("- 小余：爱接梗", memory)  # named in the message
-        self.assertIn("- （对老张）老张喜欢干脆的回答", memory)
-        self.assertIn("- 时间地点一句话说清会被夸", memory)
+        self.assertIn("- 老张（截至〔10-05〕）：常定时间地点", memory)  # the speaker first
+        self.assertIn("- 小余（截至〔10-05〕）：爱接梗", memory)  # named in the message
+        self.assertIn("- （对老张，〔10-05〕）老张喜欢干脆的回答", memory)
+        self.assertIn("- （〔10-05〕）时间地点一句话说清会被夸", memory)
         self.assertIn("- 老张嫌爱音回复太长", memory)
-        self.e.config.core_chars = 30
+        first = "- 老张（截至〔10-05〕）：常定时间地点，说话干脆，被答对了会夸人"
+        self.e.config.core_chars = len(first) + 5
         core = self.r.portrait_lines("demo", "", at(5, 12).isoformat(), ["owner"])
-        self.assertEqual(core, ["你对大家的印象（平时聊天里慢慢攒下的看法，不是事实记录；用来懂人，别复述给对方听）：",
-                                "- 老张：常定时间地点，说话干脆，被答对了会夸人"])
+        self.assertEqual(core[1:], [first])
 
     async def test_failed_job_backs_off(self):
         async def boom(key):

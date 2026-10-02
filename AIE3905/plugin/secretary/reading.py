@@ -100,14 +100,14 @@ DISTILL_TASK = """
 {feedback}
 现有的了解（p 是人，l 是相处心得）：
 {portrait}
-任务：这一天结束了。结合今天的记录更新爱音对这个群的了解，输出 JSON：
+任务：{day}（记作{mark}）这一天结束了。结合这一天的记录更新爱音对这个群的了解，输出 JSON：
 {{"people":[{{"ref":"已有的人写 p编号，新认识的人写 new","name":"昵称","text":"更新后的完整印象，120字以内：爱聊什么、在意什么、说话方式、外号、跟谁常互动、最近提到的经历和状态、喜欢别人怎么跟 ta 说话","m":[消息编号]}}],
 "lessons":[{{"ref":"已有心得写 l编号，新的写 new","about":"针对某个人写 ta 的昵称，针对全群写空字符串","text":"一条以后用得上的相处心得，60字以内","m":[消息编号]}},{{"ref":"要删掉的 l编号","drop":true}}],
 "terms":[{{"term":"梗或说法","meaning":"什么意思、怎么来的、大家怎么用，80字以内","m":[消息编号]}}],
 "style":{{"text":"这个群整体的聊天氛围，100字以内；有新认识时才写","m":[消息编号]}}}}
 规则：
 1. 是更新，不是追加：改一个人的印象时，把原印象里仍然成立的部分和今天的新认识合成一段完整的话，和今天记录矛盾的旧说法去掉。今天没有新认识的人和心得不要输出。
-2. 写成过些天再看也成立的样子：印象写这个人一贯的样子，不写成当天的流水账；不用“今天”“刚才”“这次”，近来的事带上日期（如「10-02 说在准备考试」）。提到人用昵称，不猜性别，不用“他”“她”。
+2. 写成过些天再看也成立的样子：印象写这个人一贯的样子，不写成当天的流水账。时间一律写日期，格式固定为〔月-日〕，放在那件事前面，如「〔10-02〕说在准备考试」；不用“今天”“昨天”“刚才”“这次”。提到人用昵称，不猜性别，不用“他”“她”。
 3. 相处心得只从群友对爱音回复的反应里来：被笑、被夸、被接着聊，还是被嫌弃、被纠正、被说像人机、没人理。写成以后遇到类似情况怎么做，比如「某某开玩笑时顺着演，比认真解释好」，不写一次性的事。心得是在爱音自己的性格里调整做法（更短、先说结论、顺着玩笑接），不是改掉她的性格：不写让她没有立场、变得客套或冷淡的心得。和新反应矛盾、或者已经不成立的心得，用 drop 删掉。
 4. 只写有依据的：每条新增或修改都要有今天的消息编号；拿不准就不写。
 5. 人最多 10 条，心得最多 6 条，梗和说法最多 8 条。"""
@@ -138,6 +138,28 @@ def whole(value, n):
     """One-line text if it fits in n characters, else '' (never cut a statement)."""
     text = clip(value, 10**6)
     return text if len(text) <= n else ""
+
+
+# Portrait entries are reread days later, so relative days are pinned to dates.
+RELATIVE_DAYS = {"前天": -2, "昨天": -1, "昨日": -1, "昨晚": -1, "今天": 0, "今日": 0,
+                 "今早": 0, "今晚": 0, "明天": 1, "明晚": 1, "后天": 2}
+DAY_PARTS = {"昨晚": "晚上", "今早": "早上", "今晚": "晚上", "明晚": "晚上"}
+
+
+def mark(day):
+    """The portrait's date format, 〔MM-DD〕, for a YYYY-MM-DD day."""
+    return f"〔{day[5:10]}〕" if day else ""
+
+
+def dated(text, day):
+    """Portrait text with 今天/昨天/今晚… replaced by 〔MM-DD〕 relative to `day`."""
+    base = date.fromisoformat(day)
+    return re.sub(
+        "|".join(RELATIVE_DAYS),
+        lambda m: mark((base + timedelta(days=RELATIVE_DAYS[m[0]])).isoformat())
+        + DAY_PARTS.get(m[0], ""),
+        text,
+    )
 
 
 def merged(old, new, most=50):
@@ -830,21 +852,23 @@ class Reader:
         refs, lines = {}, []
         senders = {r["sender"] for r in rows if r["sender"]}
         profiles = self.store.rows(
-            "SELECT sender,name,summary FROM profiles WHERE group_key=? ORDER BY name", (key,)
+            "SELECT sender,name,summary,last_day FROM profiles WHERE group_key=? ORDER BY name",
+            (key,),
         )
         names = {p["sender"]: p["name"] for p in profiles}
         names.update({r["sender"]: r["name"] for r in rows if r["sender"] and r["name"]})
         for i, p in enumerate([p for p in profiles if p["sender"] in senders], 1):
             refs[f"p{i}"] = ("person", p["sender"])
-            lines.append(f"p{i} {names[p['sender']]}：{p['summary']}")
+            lines.append(f"p{i} {names[p['sender']]}（截至{mark(p['last_day'])}）：{p['summary']}"
+                         if p["last_day"] else f"p{i} {names[p['sender']]}：{p['summary']}")
         for lesson in self.store.rows(
-            "SELECT id,about,text FROM lessons WHERE group_key=? ORDER BY id", (key,)
+            "SELECT id,about,text,last_day FROM lessons WHERE group_key=? ORDER BY id", (key,)
         ):
             if lesson["about"] and lesson["about"] not in senders:
                 continue
             refs[f"l{lesson['id']}"] = ("lesson", lesson["id"])
             who = f"对{names.get(lesson['about']) or '某人'}" if lesson["about"] else "全群"
-            lines.append(f"l{lesson['id']}（{who}）{lesson['text']}")
+            lines.append(f"l{lesson['id']}（{who}，{mark(lesson['last_day'])}）{lesson['text']}")
         words = self.store.rows(
             "SELECT term,meaning FROM lexicon WHERE group_key=? ORDER BY updated_at DESC", (key,)
         )
@@ -878,6 +902,8 @@ class Reader:
             tail = DISTILL_TASK.format(
                 feedback="\n".join("- " + x["text"] for x in notes) or "（无）",
                 portrait=portrait,
+                day=day,
+                mark=mark(day),
             )
             revision = self.store.get_meta("revocation:" + key)
             obj = await self.ask(
@@ -913,7 +939,7 @@ class Reader:
             return [x for x in (value if isinstance(value, list) else [])[:most] if isinstance(x, dict)]
 
         for p in listed(obj.get("people"), 10):
-            m, text = self.refs(p.get("m"), seqs), clip(p.get("text"), 140)
+            m, text = self.refs(p.get("m"), seqs), clip(dated(clip(p.get("text"), 160), day), 150)
             kind, sender = refs.get(str(p.get("ref", "")), ("", ""))
             if kind != "person":
                 sender = self.sender_named(names, p.get("name"))
@@ -923,7 +949,7 @@ class Reader:
                 "SELECT * FROM profiles WHERE group_key=? AND sender=?", (key, sender)
             )
             db.execute(
-                "INSERT OR REPLACE INTO profiles(group_key,sender,name,summary,episodes,updated_at,sources) VALUES(?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO profiles(group_key,sender,name,summary,episodes,updated_at,sources,last_day) VALUES(?,?,?,?,?,?,?,?)",
                 (
                     key,
                     sender,
@@ -932,6 +958,7 @@ class Reader:
                     old["episodes"] if old else "[]",
                     stamp,
                     merged(old["sources"] if old else "[]", m),
+                    day,
                 ),
             )
             applied += 1
@@ -943,7 +970,7 @@ class Reader:
                     db.execute("DELETE FROM lessons WHERE id=? AND group_key=?", (ident, key))
                     applied += 1
                 continue
-            m, text = self.refs(lesson.get("m"), seqs), clip(lesson.get("text"), 80)
+            m, text = self.refs(lesson.get("m"), seqs), clip(dated(clip(lesson.get("text"), 100), day), 90)
             about = lesson.get("about") if isinstance(lesson.get("about"), str) else ""
             if about.strip():
                 about = self.sender_named(names, about)
@@ -980,13 +1007,13 @@ class Reader:
                 continue
             applied += 1
         updates = [
-            (clip(t.get("term"), 20), clip(t.get("meaning"), 100), t.get("m"))
+            (clip(t.get("term"), 20), clip(dated(clip(t.get("meaning"), 120), day), 110), t.get("m"))
             for t in listed(obj.get("terms"), 8)
             if clip(t.get("term"), 20) != STYLE_TERM
         ]
         style = obj.get("style")
         if isinstance(style, dict):
-            updates.append((STYLE_TERM, clip(style.get("text"), 120), style.get("m")))
+            updates.append((STYLE_TERM, clip(dated(clip(style.get("text"), 140), day), 130), style.get("m")))
         for term, meaning, source in updates:
             m = self.refs(source, seqs)
             if not m or not term or not meaning:
@@ -1209,7 +1236,7 @@ class Reader:
         profiles = {
             p["sender"]: p
             for p in self.store.rows(
-                "SELECT sender,name,summary FROM profiles WHERE group_key=?", (key,)
+                "SELECT sender,name,summary,last_day FROM profiles WHERE group_key=?", (key,)
             )
         }
         chosen = [s for s in dict.fromkeys(people) if s in profiles]
@@ -1220,7 +1247,7 @@ class Reader:
         ]
         speaker = people[0] if people else ""
         lessons = self.store.rows(
-            """SELECT about,text FROM lessons WHERE group_key=? AND (about='' OR about=?)
+            """SELECT about,text,last_day FROM lessons WHERE group_key=? AND (about='' OR about=?)
             ORDER BY updated_at DESC,id DESC""",
             (key, speaker),
         )
@@ -1230,15 +1257,19 @@ class Reader:
             "SELECT sidebar FROM day_views WHERE group_key=? AND day=?", (key, day)
         )
         notes = (json.loads(view["sidebar"]).get("feedback", []) if view else [])[-3:]
+        def impression(p):
+            since = f"（截至{mark(p['last_day'])}）" if p["last_day"] else ""
+            return f"- {p['name']}{since}：{p['summary']}"
+
         sections = [
             (
-                "你对大家的印象（平时聊天里慢慢攒下的看法，不是事实记录；用来懂人，别复述给对方听）：",
-                [f"- {profiles[s]['name']}：{profiles[s]['summary']}" for s in chosen[:3]],
+                "你对大家的印象（平时聊天里慢慢攒下的看法，不是事实记录；〔月-日〕是日期；用来懂人，别复述给对方听）：",
+                [impression(profiles[s]) for s in chosen[:3]],
             ),
             (
-                "相处心得（从大家对你回复的反应里学到的）：",
-                [f"- （对{who}）{x['text']}" for x in lessons if x["about"]][:3]
-                + [f"- {x['text']}" for x in lessons if not x["about"]][:5],
+                "相处心得（从大家对你回复的反应里学到的，〔月-日〕是最近印证的日期）：",
+                [f"- （对{who}，{mark(x['last_day'])}）{x['text']}" for x in lessons if x["about"]][:3]
+                + [f"- （{mark(x['last_day'])}）{x['text']}" for x in lessons if not x["about"]][:5],
             ),
             (
                 "今天群友对你说过的话（白天整理的意见和吐槽）：",
