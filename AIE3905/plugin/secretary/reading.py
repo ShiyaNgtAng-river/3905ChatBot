@@ -67,7 +67,7 @@ CONSOLIDATE_TASK = """
 {{"qa":[{{"q":问题序号,"answer":"按问题清单逐条回答，100字以内；没有就省略这一条","m":[消息编号]}}],
 "ops":[
 {{"op":"topic","ref":"已有话题写 a编号，新话题写 new1、new2…","title":"话题名","m":[消息编号]}},
-{{"op":"record","topic":"a编号或new编号","text":"月-日 时:分 谁用什么方式说了或做了什么，一条只写一件事，60字以内","m":[消息编号]}}]}}
+{{"op":"record","topic":"a编号或new编号","text":"年-月-日 时:分 谁用什么方式说了或做了什么，一条只写一件事，70字以内","m":[消息编号]}}]}}
 规则：
 1. 只记以后可能被问到的内容：安排和它的每一次变化、分工、没人回答的问题、关键的日期数字名称、新说法、同一样东西被叫成不同名字的原话。闲聊不记；大家是什么样的人、梗和群的氛围另有整理，这里不写。
 2. 同一件事沿用已有话题（归档的也可以复用），不要重复建话题；写记录时，话题必须已经存在，或在前面用 topic 新建。
@@ -152,10 +152,10 @@ def mark(day):
 
 
 def pin_years(text, day):
-    """Give a 〔MM-DD〕 without a year the year that puts it closest to `day`.
+    """Give year-less dates, 〔MM-DD〕 or "MM-DD HH:MM", the year closest to `day`.
 
-    Models sometimes drop the year, and entries written before the format had one
-    lack it; `day` is the entry's own date, so a date across New Year stays right.
+    Models sometimes drop the year, and entries written before dates had one lack
+    it; `day` is the entry's own date, so a date across New Year stays right.
     """
     if not day:
         return text
@@ -168,9 +168,13 @@ def pin_years(text, day):
                 options.append(date(year, int(m[1]), int(m[2])))
             except ValueError:
                 pass
-        return mark(min(options, key=lambda d: abs(d - base)).isoformat()) if options else m[0]
+        if not options:
+            return m[0]
+        found = min(options, key=lambda d: abs(d - base)).isoformat()
+        return mark(found) if m[0].startswith("〔") else found
 
-    return re.sub(r"〔(\d{1,2})-(\d{1,2})〕", full, text)
+    text = re.sub(r"〔(\d{1,2})-(\d{1,2})〕", full, text)
+    return re.sub(r"(?<![\d-])(\d{1,2})-(\d{1,2})(?= \d{1,2}:\d{2})", full, text)
 
 
 def dated(text, day):
@@ -360,6 +364,15 @@ class Reader:
             + 0.3 * min(t["days_seen"] or 1, 10)
             + 0.1 * min(t.get("records", 0), 20)
         )
+
+    @staticmethod
+    def record(f):
+        """A long-term record as shown: its day, then the statement with years completed.
+
+        Statements usually start with their own "MM-DD HH:MM"; the day is not repeated then.
+        """
+        text = pin_years(f["statement"], f["day"])
+        return text if text.startswith(f["day"]) else f"{f['day']} {text}"
 
     def facts(self, key, topic_id):
         """Every record of a topic in time order; nothing is hidden as outdated."""
@@ -610,9 +623,9 @@ class Reader:
         for t in live:
             refs[f"a{t['id']}"] = ("topic", t["id"])
             lines.append(
-                f"a{t['id']} {t['title']}［最近 {t['last_day'][5:]}｜{t['records']} 条记录］"
+                f"a{t['id']} {t['title']}［最近 {t['last_day']}｜{t['records']} 条记录］"
             )
-            lines += [f"  {f['day'][5:]} {f['statement']}" for f in self.facts(key, t["id"])[-6:]]
+            lines += [f"  {self.record(f)}" for f in self.facts(key, t["id"])[-6:]]
         archived = sorted(
             [t for t in topics if t["status"] == "archived"],
             key=lambda t: t["last_day"],
@@ -1232,8 +1245,8 @@ class Reader:
                 facts = self.facts(key, t["id"])
                 if not facts:
                     continue
-                shown = "；".join(f"{f['day'][5:]} {f['statement']}" for f in facts[-4:])
-                line = f"- {t['title']}（最近 {t['last_day'][5:]}）：{shown}"
+                shown = "；".join(self.record(f) for f in facts[-4:])
+                line = f"- {t['title']}（最近 {t['last_day']}）：{shown}"
                 size += len(line)
                 if lines and size > cfg.anchor_chars:
                     break
@@ -1337,7 +1350,7 @@ class Reader:
                 continue
             s["sources"][r["uid"]] = r
             s["used_sources"].add(r["uid"])
-            clock = datetime.fromisoformat(r["at"]).astimezone(tz).strftime("%m-%d %H:%M")
+            clock = datetime.fromisoformat(r["at"]).astimezone(tz).strftime("%Y-%m-%d %H:%M")
             out.append(f"[{clock} {r['name'] or '群成员'}] {clip(r['text'], 80)}")
             if len(out) >= most:
                 break
@@ -1357,7 +1370,7 @@ class Reader:
                 "records": [
                     {
                         "day": f["day"],
-                        "text": f["statement"],
+                        "text": pin_years(f["statement"], f["day"]),
                         "evidence": self.cite(s, json.loads(f["sources"])),
                     }
                     for f in self.facts(key, t["id"])[-12:]
@@ -1527,7 +1540,7 @@ class Reader:
         related = [
             {
                 "topic": t["title"],
-                "records": [f"{f['day']} {f['statement']}" for f in self.facts(s["key"], t["id"])[-5:]],
+                "records": [self.record(f) for f in self.facts(s["key"], t["id"])[-5:]],
             }
             for t in (rank(query, self.topics(s["key"]), self.label)[:3] if query else [])
         ]
