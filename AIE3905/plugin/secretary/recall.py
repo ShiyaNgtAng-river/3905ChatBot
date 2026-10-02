@@ -180,7 +180,7 @@ class Recall:
                         "name": r["name"] or "群成员",
                         "at": datetime.fromisoformat(r["at"])
                         .astimezone(tz)
-                        .strftime("%m-%d %H:%M"),
+                        .strftime("%Y-%m-%d %H:%M"),
                         "text": r["text"][:500],
                     }
                     for r in rows
@@ -338,7 +338,7 @@ class Recall:
                 notes.append(f"本群记录里没有找到“{who}”")
 
         def clock(at):
-            return datetime.fromisoformat(at).astimezone(tz).strftime("%m-%d %H:%M")
+            return datetime.fromisoformat(at).astimezone(tz).strftime("%Y-%m-%d %H:%M")
 
         rows = (
             self.store.search(
