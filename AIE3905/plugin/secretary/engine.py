@@ -649,7 +649,7 @@ class Engine:
             return False
 
     async def _memory_loop(self):
-        """Read, consolidate and roll up each group's chat; one model job per tick."""
+        """Read, consolidate, distill and roll up each group's chat; one model job per tick."""
         await asyncio.sleep(self.config.start_delay)
         while True:
             for key, g in self.config.groups.items():
@@ -658,6 +658,7 @@ class Engine:
                 for name, job in (
                     ("read", self.reader.read),
                     ("consolidate", self.reader.consolidate),
+                    ("distill", self.reader.distill),
                     ("rollup", self.reader.rollup),
                 ):
                     if await self._background(key, name, job):

@@ -76,6 +76,8 @@ class Config:
         self.gate = memory.get("gate", True)
         self.anchor_chars = memory.get("anchor_chars", 1500)
         self.day_chars = memory.get("day_chars", 900)
+        # The group portrait in each reply: impressions, lessons, today's feedback.
+        self.core_chars = memory.get("core_chars", 900)
         self.half_life = memory.get("half_life_days", 14)
         # Host providers finish loading after plugins start.
         self.start_delay = memory.get("start_delay_seconds", 60)
@@ -92,6 +94,7 @@ class Config:
             self.consolidate_timeout,
             self.anchor_chars,
             self.day_chars,
+            self.core_chars,
             self.half_life,
             self.start_delay,
         )

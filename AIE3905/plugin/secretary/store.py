@@ -127,10 +127,24 @@ class Store:
             r["name"] for r in self.conn.execute("PRAGMA table_info(profiles)")
         }:
             self.conn.execute("ALTER TABLE profiles ADD COLUMN sources TEXT DEFAULT '[]'")
+        if "last_day" not in {
+            r["name"] for r in self.conn.execute("PRAGMA table_info(profiles)")
+        }:
+            # Local day of the newest evidence behind an impression, shown as 〔YYYY-MM-DD〕.
+            self.conn.execute("ALTER TABLE profiles ADD COLUMN last_day TEXT DEFAULT ''")
         if "cached_tokens" not in {
             r["name"] for r in self.conn.execute("PRAGMA table_info(usage)")
         }:
             self.conn.execute("ALTER TABLE usage ADD COLUMN cached_tokens INTEGER")
+        # v5: what the bot learned from how people reacted to it. "about" is a sender,
+        # or '' for the whole group; sources are message seqs like the v4 tables.
+        self.conn.executescript("""
+        CREATE TABLE IF NOT EXISTS lessons(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, group_key TEXT, about TEXT, text TEXT,
+          sources TEXT, first_day TEXT, last_day TEXT, updated_at TEXT);
+        CREATE INDEX IF NOT EXISTS lesson_group ON lessons(group_key,about);
+        PRAGMA user_version=5;
+        """)
         self.fts = True
         try:
             existing = self.one("SELECT 1 FROM sqlite_master WHERE name='message_fts'")
@@ -513,10 +527,21 @@ class Store:
                     (group, p["sender"]),
                 )
         if seqs:
-            self._purge_derived(db, group, seqs)
-        # Remove generated text conservatively: it may paraphrase removed evidence.
-        db.execute("DELETE FROM answers WHERE group_key=?", (group,))
-        db.execute("DELETE FROM feedback WHERE group_key=?", (group,))
+            self._purge_derived(db, group, seqs, action)
+        if action == "retention":
+            # Expiry is routine: drop only replies that used an expired message. Older
+            # replies go by date in expire(); wiping all of them would leave nothing to
+            # learn from, since some message expires on almost every tick.
+            for a in self.rows(
+                "SELECT id,sources FROM answers WHERE group_key=?", (group,)
+            ):
+                if ids.intersection(json.loads(a["sources"] or "[]")):
+                    db.execute("DELETE FROM answers WHERE id=?", (a["id"],))
+                    db.execute("DELETE FROM feedback WHERE answer_id=?", (a["id"],))
+        else:
+            # Remove generated text conservatively: it may paraphrase removed evidence.
+            db.execute("DELETE FROM answers WHERE group_key=?", (group,))
+            db.execute("DELETE FROM feedback WHERE group_key=?", (group,))
         db.execute("DELETE FROM drafts WHERE group_key=?", (group,))
         db.execute("DELETE FROM dialogue_runs WHERE group_key=?", (group,))
         db.execute(
@@ -532,13 +557,15 @@ class Store:
             ("revocation:" + group, utcnow()),
         )
 
-    def _purge_derived(self, db, group, seqs):
+    def _purge_derived(self, db, group, seqs, action=""):
         """Drop every v4 derived entry that cites one of the removed message seqs.
 
         Day views and daily digests lose only the points and answers citing them;
         week and month digests are deleted and rebuilt from the daily ones. A fact
         that superseded an older one hands the topic back to that older fact,
-        marked uncertain.
+        marked uncertain. The group portrait (people, terms, lessons) is distilled
+        again and again: on expiry it only loses the expired seqs and goes when none
+        are left; a recall, edit or opt-out removes the whole entry.
         """
 
         def hit(value):
@@ -607,11 +634,20 @@ class Store:
                 )
             else:
                 db.execute("DELETE FROM anchor_topics WHERE id=?", (t["id"],))
-        for table, key in (("lexicon", "term"), ("profiles", "sender")):
+        for table, key in (("lexicon", "term"), ("profiles", "sender"), ("lessons", "id")):
             for r in self.rows(
                 f"SELECT {key},sources FROM {table} WHERE group_key=?", (group,)
             ):
-                if hit(json.loads(r["sources"] or "[]")):
+                sources = json.loads(r["sources"] or "[]")
+                if not hit(sources):
+                    continue
+                left = [n for n in sources if n not in seqs]
+                if action == "retention" and left:
+                    db.execute(
+                        f"UPDATE {table} SET sources=? WHERE group_key=? AND {key}=?",
+                        (encode(left), group, r[key]),
+                    )
+                else:
                     db.execute(
                         f"DELETE FROM {table} WHERE group_key=? AND {key}=?",
                         (group, r[key]),
@@ -659,10 +695,11 @@ class Store:
                     )
                 ]
                 self._purge(db, group, ids, sender, "opt_out")
-                db.execute(
-                    "DELETE FROM profiles WHERE group_key=? AND sender=?",
-                    (group, sender),
-                )
+                for table, column in (("profiles", "sender"), ("lessons", "about")):
+                    db.execute(
+                        f"DELETE FROM {table} WHERE group_key=? AND {column}=?",
+                        (group, sender),
+                    )
 
     def forget(self, group, item_id, actor):
         with self.tx() as db:
@@ -707,10 +744,12 @@ class Store:
             db.execute(
                 "DELETE FROM episodes WHERE group_key=? AND end_at<?", (group, cutoff)
             )
-            db.execute(
-                "DELETE FROM profiles WHERE group_key=? AND updated_at<?",
-                (group, cutoff),
-            )
+            # Impressions and lessons that nothing confirmed for a whole period fade out.
+            for table in ("profiles", "lessons"):
+                db.execute(
+                    f"DELETE FROM {table} WHERE group_key=? AND updated_at<?",
+                    (group, cutoff),
+                )
             for table in ("day_views", "digests"):
                 db.execute(
                     f"DELETE FROM {table} WHERE group_key=? AND {'updated_at' if table == 'day_views' else 'at'}<?",
