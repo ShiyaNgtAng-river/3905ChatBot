@@ -6,7 +6,8 @@ import asyncio
 import json
 import re
 import uuid
-from datetime import datetime
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from .memory import validate_candidates
@@ -25,7 +26,7 @@ NATIVE_GUIDE = """先看上面的群聊记录，弄清当前发言人在接谁�
 - 专业领域的询问（技术原理、编程、学术、法律、医疗、金融、工程、产品对比与选型等），或者对方说了“仔细”“深入”“详细”：做深度调研再回答。把问题交给 transfer_to_search，写明“深入调研”和要覆盖的方面。
 - 深度回答也是在跟这个人说话，不是写报告：开头直接把最要紧的一点告诉他（不要写“结论：”“一句话结论”之类的标签）；中间用编号分段把关键内容、适用条件和还没定论的地方讲清楚；最后用一两句自己的话收尾，比如建议、看法或下一步；来源放在最后，写“参考”再列 2–4 个链接。纯文本，不用 Markdown 符号，1500 字以内。
 - 调研结果不要压缩成一两句带过，也不要堆砌无关内容。
-- 需要调用工具时直接调用，不要先说“我查一下”“稍等”之类的话。
+- 需要调用工具时直接调用，不附带任何说明文字：不说“我查一下”“稍等”，也不要用英文写“I'll check …”之类的话。回复始终用中文；英文只出现在专有名词、对方的原话或人设里偶尔的口头英文中。
 
 开头“今天群里的话题”“长期记忆”是后台通读挑出来的要点，不是全部原文，也不代表结论；拿不准或要细节时再查，别凭印象编。
 问到具体的名字、叫法、原话、谁什么时候说的、有没有人回答或确认，开头的记忆和最近的群聊里又看不到时，先用工具查记录再回答。没查过不能说“没有”“没见过”“没人回答”；也不要说“我再查查”却不查。
@@ -57,10 +58,81 @@ _TOOL_BLOCK = re.compile(rf"<({_TOOL_TAGS})\b[^>]*>(.*?)</\1>", re.S)
 _TOOL_TAG = re.compile(rf"</?(?:{_TOOL_TAGS})\b[^>]*>")
 
 
+# English narration some models write next to a tool call ("I'll check the records for
+# these six items."). The host may send it glued to the Chinese answer; it is never for the
+# group. Only action/acknowledgement openers are matched, so "Hello～" or quoted English stays.
+_EN_FILLER = re.compile(
+    r"^\s*(?:I(?:'|’)ll|I will|I(?:'|’)m going to|I am going to|Let me|Let(?:'|’)s|I need to|"
+    r"I(?:'|’)m (?:checking|looking|searching|going)|Checking|Looking up|Searching|"
+    r"Sure|Okay|OK|Alright|Got it|(?:First|Now|Next),?\s+I(?:'|’)ll)\b"
+    r"[^\n一-鿿]{0,200}?[.!?…:：]+\s*"
+)
+
+
+# Stock concessions and apologies. Said once they are fine; said in reply after reply they
+# read as a script, and the model cannot notice because each reply is generated alone.
+_STOCK_REPLY = re.compile(
+    r"我改|我错了|是我不对|算我不对|对不起|抱歉|我的锅|嘴快了|收着点|收一收|记岔了?|搞错了"
+    r"|被你发现了|被发现了|不是那个意思|别生气|温柔一点|你说得对|我认了"
+)
+
+
+def recent_repeats(outputs, user_text, window=3, generic=2):
+    """Phrases the bot keeps reusing in its last few replies, to name before the next one.
+
+    Returns stock responses (apologies, concessions) found in any of the last `window`
+    replies, then up to `generic` other four-character phrases that appear in every one of
+    them (the kind of remark repeated reply after reply). Phrases from the current message
+    are left out, as are fragments that start or end with a particle.
+
+    Args:
+        outputs: The bot's earlier replies in this conversation, oldest first.
+        user_text: The message being answered now.
+        window: How many recent replies to look at.
+        generic: Maximum number of non-stock phrases to return.
+
+    Returns:
+        A list of phrases, stock ones first.
+    """
+    recent = [o for o in outputs if o][-window:]
+    stock = []
+    for output in recent:
+        for found in _STOCK_REPLY.findall(output):
+            if found not in stock:
+                stock.append(found)
+    if len(recent) < window:
+        return stock
+
+    def grams(text, n):
+        text = re.sub(r"[^一-鿿]", "", text)
+        return {text[i : i + n] for i in range(len(text) - n + 1)}
+
+    def pairs(g):
+        return {g[i : i + 2] for i in range(len(g) - 1)}
+
+    given = grams(user_text, 3)
+    shared = set.intersection(*(grams(o, 4) for o in recent))
+    picked = []
+    for g in sorted(shared):
+        if g[0] in _EDGE or g[-1] in _EDGE or any(g in x or x in g for x in stock):
+            continue
+        if grams(g, 3) & given:  # overlaps what the user is talking about now
+            continue
+        if not any(pairs(g) & pairs(p) for p in picked):
+            picked.append(g)
+    return stock + picked[:generic]
+
+
+# Characters that rarely begin or end a phrase; fragments cut there are noise.
+_EDGE = set("了的是着过吗呢吧啊呀啦嘛哦和就也都还又")
+
+
 def only_filler(text):
     """True when a message says nothing but that a lookup is about to happen."""
-    head = _FILLER_HEAD.match(text)
-    return bool(head) and not text[head.end() :].strip()
+    rest, seen = text, False
+    while head := (_FILLER_HEAD.match(rest) or _EN_FILLER.match(rest)):
+        rest, seen = rest[head.end() :], True
+    return seen and not rest.strip()
 
 _CANNED_TAIL = re.compile(
     r"\n*\s*(希望(以上|这些)?(内容|信息|回答)?(能)?对你有(所)?帮助|"
@@ -116,9 +188,14 @@ def tidy_reply(text, flags=None):
     text = re.sub(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)", r"\1 \2", text)
     if text != before:
         hit("markdown")
-    while (head := _FILLER_HEAD.match(text)) and text[head.end() :].strip():
+    while True:
+        if (head := _EN_FILLER.match(text)) and text[head.end() :].strip():
+            hit("english_filler")
+        elif (head := _FILLER_HEAD.match(text)) and text[head.end() :].strip():
+            hit("filler")
+        else:
+            break
         text = text[head.end() :]
-        hit("filler")
     if (head := _APOLOGY_HEAD.match(text)) and text[head.end() :].strip():
         text = text[head.end() :]
         hit("apology")
@@ -819,6 +896,11 @@ class Dialogue:
                 "SELECT at,output FROM answers WHERE group_key=? AND at<=? ORDER BY at DESC LIMIT ?",
                 (key, utcnow(), limit),
             )
+            # Only the current stretch of conversation: replies from earlier today don't count.
+            since = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+            s["avoid"] = recent_repeats(
+                [a["output"] for a in reversed(answers) if a["at"] >= since], m.get("text", "")
+            )
             lines += [
                 (a["at"], 1, f"[{clock(a['at'])} 你] {one_line(a['output'], 200)}")
                 for a in answers
@@ -898,6 +980,21 @@ class Dialogue:
             )
         parts.append(NATIVE_GUIDE)
         return "\n".join(parts)
+
+    def native_reminder(self, s):
+        """One-turn note naming phrases the bot just kept repeating, or "" when there are none.
+
+        It goes next to the current message rather than into the long system prompt:
+        placed at the end of the system prompt it was read and ignored (lab replay).
+        Call after native_prompt, which fills s["avoid"].
+        """
+        if not s.get("avoid"):
+            return ""
+        return (
+            "（提醒，不是群友的话）你最近几条回复里已经用过这些说法：「" + "」「".join(s["avoid"])
+            + "」。这次别再用。真要认错就换个方式：说清是哪里错了、问一句是哪句、自嘲一句或者撒个娇；"
+            "没必要认错就不认。"
+        )
 
     def native_tool(self, s, name, args):
         """Run one validated tool for the host agent and return JSON text.
@@ -1032,6 +1129,7 @@ class Dialogue:
                             {
                                 "prompt_version": "native-1.2",
                                 "style_flags": s["style_flags"],
+                                "avoid_phrases": s.get("avoid", []),
                                 "draft_ids": [d["id"] for d in s["drafts"]],
                                 "operations": s["operations"],
                             }
@@ -1060,6 +1158,7 @@ class Dialogue:
                         {
                             "prompt_version": "native-1.2",
                             "style_flags": s["style_flags"],
+                            "avoid_phrases": s.get("avoid", []),
                             "draft_ids": [d["id"] for d in s["drafts"]],
                             "operations": s["operations"],
                         }
