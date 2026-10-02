@@ -435,8 +435,8 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(people["老张"]["summary"], "常定时间地点，说话干脆，被答对了会夸人")
         self.assertEqual(json.loads(people["老张"]["sources"]), [s[1], react])
         # Relative days are pinned to the distilled day, in the portrait's date format.
-        self.assertEqual(people["小余"]["summary"], "爱接梗，〔10-05〕管东门叫老地方")
-        self.assertIn("任务：2026-10-05（记作〔10-05〕）这一天结束了", payload)
+        self.assertEqual(people["小余"]["summary"], "爱接梗，〔2026-10-05〕管东门叫老地方")
+        self.assertIn("任务：2026-10-05（记作〔2026-10-05〕）这一天结束了", payload)
         lessons = self.e.store.rows("SELECT about,text FROM lessons ORDER BY id")
         self.assertEqual(lessons, [{"about": "", "text": "时间地点一句话说清会被夸"},
                                    {"about": "owner", "text": "老张喜欢干脆的回答"}])
@@ -459,12 +459,23 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
 
         self.model(again)
         self.assertEqual(await self.r.distill_day("demo", "2026-10-05", at(6, 7)), "2026-10-05")
-        self.assertIn(f"l{mine}（对老张，〔10-05〕）老张喜欢干脆的回答", payloads[0])
-        self.assertIn("老张（截至〔10-05〕）：常定时间地点", payloads[0])
+        self.assertIn(f"l{mine}（对老张，〔2026-10-05〕）老张喜欢干脆的回答", payloads[0])
+        self.assertIn("老张（截至〔2026-10-05〕）：常定时间地点", payloads[0])
         self.assertIsNone(self.e.store.one("SELECT 1 FROM lessons WHERE about=''"))
         texts = [x["text"] for x in self.e.store.rows("SELECT text FROM lessons WHERE about='owner'")]
         self.assertEqual(len(texts), 3)  # person limit: the one confirmed longest ago went
         self.assertNotIn("老张喜欢先听结论", texts)
+
+    def test_portrait_dates_carry_the_year(self):
+        from secretary.reading import dated, pin_years
+
+        self.assertEqual(dated("今晚说要考试，昨天迟到", "2026-10-05"), "〔2026-10-05〕晚上说要考试，〔2026-10-04〕迟到")
+        # A year-less date (from the model, or an entry written before years were
+        # added) takes the year closest to the entry's own date.
+        self.assertEqual(pin_years("〔09-29〕只发玫瑰", "2026-10-02T14:06:12+00:00"), "〔2026-09-29〕只发玫瑰")
+        self.assertEqual(pin_years("〔12-30〕说跨年回家", "2027-01-02"), "〔2026-12-30〕说跨年回家")
+        self.assertEqual(pin_years("〔01-03〕要考试", "2026-12-30"), "〔2027-01-03〕要考试")
+        self.assertEqual(pin_years("〔2026-09-29〕不变", "2026-10-02"), "〔2026-09-29〕不变")
 
     async def test_expiry_trims_the_portrait_and_recall_removes_it(self):
         s, react, _ = await self.distilled_day()
@@ -505,12 +516,12 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         prompt = self.e.conversation.native_prompt(self.state("小余说的老地方在哪", when=at(5, 12)), "老张")
         memory = prompt[: prompt.index("</group_memory>")]
         self.assertIn("你对大家的印象", memory)
-        self.assertIn("- 老张（截至〔10-05〕）：常定时间地点", memory)  # the speaker first
-        self.assertIn("- 小余（截至〔10-05〕）：爱接梗", memory)  # named in the message
-        self.assertIn("- （对老张，〔10-05〕）老张喜欢干脆的回答", memory)
-        self.assertIn("- （〔10-05〕）时间地点一句话说清会被夸", memory)
+        self.assertIn("- 老张（截至〔2026-10-05〕）：常定时间地点", memory)  # the speaker first
+        self.assertIn("- 小余（截至〔2026-10-05〕）：爱接梗", memory)  # named in the message
+        self.assertIn("- （对老张，〔2026-10-05〕）老张喜欢干脆的回答", memory)
+        self.assertIn("- （〔2026-10-05〕）时间地点一句话说清会被夸", memory)
         self.assertIn("- 老张嫌爱音回复太长", memory)
-        first = "- 老张（截至〔10-05〕）：常定时间地点，说话干脆，被答对了会夸人"
+        first = "- 老张（截至〔2026-10-05〕）：常定时间地点，说话干脆，被答对了会夸人"
         self.e.config.core_chars = len(first) + 5
         core = self.r.portrait_lines("demo", "", at(5, 12).isoformat(), ["owner"])
         self.assertEqual(core[1:], [first])

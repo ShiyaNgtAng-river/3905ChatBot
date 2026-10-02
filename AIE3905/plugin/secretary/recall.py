@@ -389,11 +389,13 @@ class Recall:
 
     def profile(self, key, who):
         """Member notes and activity for a name or id; [] when unknown."""
+        from .reading import pin_years  # reading imports this module
+
         tz = ZoneInfo(self.e.config.group(key).timezone)
         out = []
         for sender in self.senders(key, who)[:5]:
             p = self.store.one(
-                "SELECT name,summary,updated_at FROM profiles WHERE group_key=? AND sender=?",
+                "SELECT name,summary,updated_at,last_day FROM profiles WHERE group_key=? AND sender=?",
                 (key, sender),
             )
             stats = self.store.one(
@@ -404,7 +406,9 @@ class Recall:
             out.append(
                 {
                     "name": (p and p["name"]) or stats["name"] or sender,
-                    "note": p["summary"] if p else "还没有整理出印象",
+                    "note": pin_years(p["summary"], p["last_day"] or p["updated_at"])
+                    if p
+                    else "还没有整理出印象",
                     "messages": stats["n"],
                     "last_active": datetime.fromisoformat(stats["last"])
                     .astimezone(tz)

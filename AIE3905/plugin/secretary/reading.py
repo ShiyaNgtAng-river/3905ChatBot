@@ -107,7 +107,7 @@ DISTILL_TASK = """
 "style":{{"text":"这个群整体的聊天氛围，100字以内；有新认识时才写","m":[消息编号]}}}}
 规则：
 1. 是更新，不是追加：改一个人的印象时，把原印象里仍然成立的部分和今天的新认识合成一段完整的话，和今天记录矛盾的旧说法去掉。今天没有新认识的人和心得不要输出。
-2. 写成过些天再看也成立的样子：印象写这个人一贯的样子，不写成当天的流水账。时间一律写日期，格式固定为〔月-日〕，放在那件事前面，如「〔10-02〕说在准备考试」；不用“今天”“昨天”“刚才”“这次”。提到人用昵称，不猜性别，不用“他”“她”。
+2. 写成过些天再看也成立的样子：印象写这个人一贯的样子，不写成当天的流水账。时间一律写日期，格式固定为〔年-月-日〕，放在那件事前面，如「〔2026-10-02〕说在准备考试」；不用“今天”“昨天”“刚才”“这次”。提到人用昵称，不猜性别，不用“他”“她”。
 3. 相处心得只从群友对爱音回复的反应里来：被笑、被夸、被接着聊，还是被嫌弃、被纠正、被说像人机、没人理。写成以后遇到类似情况怎么做，比如「某某开玩笑时顺着演，比认真解释好」，不写一次性的事。心得是在爱音自己的性格里调整做法（更短、先说结论、顺着玩笑接），不是改掉她的性格：不写让她没有立场、变得客套或冷淡的心得。和新反应矛盾、或者已经不成立的心得，用 drop 删掉。
 4. 只写有依据的：每条新增或修改都要有今天的消息编号；拿不准就不写。
 5. 人最多 10 条，心得最多 6 条，梗和说法最多 8 条。"""
@@ -147,19 +147,42 @@ DAY_PARTS = {"昨晚": "晚上", "今早": "早上", "今晚": "晚上", "明晚
 
 
 def mark(day):
-    """The portrait's date format, 〔MM-DD〕, for a YYYY-MM-DD day."""
-    return f"〔{day[5:10]}〕" if day else ""
+    """The portrait's date format, 〔YYYY-MM-DD〕, for a day or timestamp."""
+    return f"〔{day[:10]}〕" if day else ""
+
+
+def pin_years(text, day):
+    """Give a 〔MM-DD〕 without a year the year that puts it closest to `day`.
+
+    Models sometimes drop the year, and entries written before the format had one
+    lack it; `day` is the entry's own date, so a date across New Year stays right.
+    """
+    if not day:
+        return text
+    base = date.fromisoformat(day[:10])
+
+    def full(m):
+        options = []
+        for year in (base.year - 1, base.year, base.year + 1):
+            try:
+                options.append(date(year, int(m[1]), int(m[2])))
+            except ValueError:
+                pass
+        return mark(min(options, key=lambda d: abs(d - base)).isoformat()) if options else m[0]
+
+    return re.sub(r"〔(\d{1,2})-(\d{1,2})〕", full, text)
 
 
 def dated(text, day):
-    """Portrait text with 今天/昨天/今晚… replaced by 〔MM-DD〕 relative to `day`."""
+    """Portrait text with 今天/昨天/今晚… and year-less dates pinned relative to `day`."""
     base = date.fromisoformat(day)
-    return re.sub(
+    text = re.sub(
         "|".join(RELATIVE_DAYS),
         lambda m: mark((base + timedelta(days=RELATIVE_DAYS[m[0]])).isoformat())
         + DAY_PARTS.get(m[0], ""),
         text,
     )
+    return pin_years(text, day)
 
 
 def merged(old, new, most=50):
@@ -859,8 +882,8 @@ class Reader:
         names.update({r["sender"]: r["name"] for r in rows if r["sender"] and r["name"]})
         for i, p in enumerate([p for p in profiles if p["sender"] in senders], 1):
             refs[f"p{i}"] = ("person", p["sender"])
-            lines.append(f"p{i} {names[p['sender']]}（截至{mark(p['last_day'])}）：{p['summary']}"
-                         if p["last_day"] else f"p{i} {names[p['sender']]}：{p['summary']}")
+            since = f"（截至{mark(p['last_day'])}）" if p["last_day"] else ""
+            lines.append(f"p{i} {names[p['sender']]}{since}：{pin_years(p['summary'], p['last_day'])}")
         for lesson in self.store.rows(
             "SELECT id,about,text,last_day FROM lessons WHERE group_key=? ORDER BY id", (key,)
         ):
@@ -868,10 +891,11 @@ class Reader:
                 continue
             refs[f"l{lesson['id']}"] = ("lesson", lesson["id"])
             who = f"对{names.get(lesson['about']) or '某人'}" if lesson["about"] else "全群"
-            lines.append(f"l{lesson['id']}（{who}，{mark(lesson['last_day'])}）{lesson['text']}")
-        words = self.store.rows(
-            "SELECT term,meaning FROM lexicon WHERE group_key=? ORDER BY updated_at DESC", (key,)
-        )
+            lines.append(
+                f"l{lesson['id']}（{who}，{mark(lesson['last_day'])}）"
+                + pin_years(lesson["text"], lesson["last_day"])
+            )
+        words = self.lexicon(key)
         terms = [w for w in words if w["term"] != STYLE_TERM and w["term"] in text][:20]
         if terms:
             lines.append("梗和说法：" + "；".join(f"{w['term']}＝{w['meaning']}" for w in terms))
@@ -1136,6 +1160,16 @@ class Reader:
 
     # --- rendering for replies (SQL only) ----------------------------------
 
+    def lexicon(self, key, most=1000):
+        """Group terms, newest first, with year-less dates in meanings completed."""
+        return [
+            dict(w, meaning=pin_years(w["meaning"], w["updated_at"]))
+            for w in self.store.rows(
+                "SELECT term,meaning,updated_at FROM lexicon WHERE group_key=? ORDER BY updated_at DESC LIMIT ?",
+                (key, most),
+            )
+        ]
+
     def brief(self, key, text, at, people=()):
         """Background for one reply: today's topics, relevant anchors, group terms,
         then the portrait: impressions, lessons and today's feedback on the bot.
@@ -1210,10 +1244,7 @@ class Reader:
                     "拿不准就查原文；和正式事项冲突时以正式事项为准）："
                 )
                 parts += lines
-        words = self.store.rows(
-            "SELECT term,meaning FROM lexicon WHERE group_key=? ORDER BY updated_at DESC LIMIT 200",
-            (key,),
-        )
+        words = self.lexicon(key, 200)
         style = next((w["meaning"] for w in words if w["term"] == STYLE_TERM), "")
         core = self.portrait_lines(key, text, at, list(people))
         seen = focus + " " + " ".join(parts + core)
@@ -1259,17 +1290,19 @@ class Reader:
         notes = (json.loads(view["sidebar"]).get("feedback", []) if view else [])[-3:]
         def impression(p):
             since = f"（截至{mark(p['last_day'])}）" if p["last_day"] else ""
-            return f"- {p['name']}{since}：{p['summary']}"
+            return f"- {p['name']}{since}：{pin_years(p['summary'], p['last_day'])}"
 
         sections = [
             (
-                "你对大家的印象（平时聊天里慢慢攒下的看法，不是事实记录；〔月-日〕是日期；用来懂人，别复述给对方听）：",
+                "你对大家的印象（平时聊天里慢慢攒下的看法，不是事实记录；〔年-月-日〕是日期；用来懂人，别复述给对方听）：",
                 [impression(profiles[s]) for s in chosen[:3]],
             ),
             (
-                "相处心得（从大家对你回复的反应里学到的，〔月-日〕是最近印证的日期）：",
-                [f"- （对{who}，{mark(x['last_day'])}）{x['text']}" for x in lessons if x["about"]][:3]
-                + [f"- （{mark(x['last_day'])}）{x['text']}" for x in lessons if not x["about"]][:5],
+                "相处心得（从大家对你回复的反应里学到的，〔年-月-日〕是最近印证的日期）：",
+                [f"- （对{who}，{mark(x['last_day'])}）{pin_years(x['text'], x['last_day'])}"
+                 for x in lessons if x["about"]][:3]
+                + [f"- （{mark(x['last_day'])}）{pin_years(x['text'], x['last_day'])}"
+                   for x in lessons if not x["about"]][:5],
             ),
             (
                 "今天群友对你说过的话（白天整理的意见和吐槽）：",

@@ -130,7 +130,7 @@ class Store:
         if "last_day" not in {
             r["name"] for r in self.conn.execute("PRAGMA table_info(profiles)")
         }:
-            # Local day of the newest evidence behind an impression, shown as 〔MM-DD〕.
+            # Local day of the newest evidence behind an impression, shown as 〔YYYY-MM-DD〕.
             self.conn.execute("ALTER TABLE profiles ADD COLUMN last_day TEXT DEFAULT ''")
         if "cached_tokens" not in {
             r["name"] for r in self.conn.execute("PRAGMA table_info(usage)")
