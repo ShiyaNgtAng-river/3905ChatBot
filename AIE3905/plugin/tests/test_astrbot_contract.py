@@ -559,6 +559,24 @@ class NativeFrontendTests(PluginHarness):
         self.assertTrue(only_filler("你等我一下～"))
         self.assertEqual(tidy_reply("你可以看看群精华。"), "你可以看看群精华。")
 
+    async def test_english_narration_before_a_tool_call_is_removed(self):
+        from contract_plugin.secretary.dialogue import only_filler, tidy_reply
+
+        flags = []
+        glued = "I'll check the records for these six items.诶，六项一条条来。"
+        self.assertEqual(tidy_reply(glued, flags), "诶，六项一条条来。")
+        self.assertIn("english_filler", flags)
+        self.assertEqual(tidy_reply("Let me check.\n好，查到了：v4。"), "好，查到了：v4。")
+        self.assertTrue(only_filler("I'll check the group records for these six points."))
+        self.assertTrue(only_filler("我查一下～ I'll look it up."))
+        for kept in ("Hello～今天刘海超听话！", "vibe coding 啊，我知道的。", "OK，我记下了。"):
+            self.assertEqual(tidy_reply(kept), kept)
+        ev = await self.mention("帮我核对六件事", "en1")
+        _, text = await self.turn(ev, "I'll look up the specific records for each of these six items.六件事我逐条核了一遍。")
+        self.assertEqual(text, "六件事我逐条核了一遍。")
+        req, _ = await self.turn(await self.mention("再查一下", "en2"), "好")
+        self.assertIn("不要用英文写", req.system_prompt)
+
     async def test_service_phrases_are_trimmed_and_counted_not_hidden(self):
         from contract_plugin.secretary.dialogue import tidy_reply
 

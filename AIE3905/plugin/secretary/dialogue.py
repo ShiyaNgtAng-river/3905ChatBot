@@ -25,7 +25,7 @@ NATIVE_GUIDE = """先看上面的群聊记录，弄清当前发言人在接谁�
 - 专业领域的询问（技术原理、编程、学术、法律、医疗、金融、工程、产品对比与选型等），或者对方说了“仔细”“深入”“详细”：做深度调研再回答。把问题交给 transfer_to_search，写明“深入调研”和要覆盖的方面。
 - 深度回答也是在跟这个人说话，不是写报告：开头直接把最要紧的一点告诉他（不要写“结论：”“一句话结论”之类的标签）；中间用编号分段把关键内容、适用条件和还没定论的地方讲清楚；最后用一两句自己的话收尾，比如建议、看法或下一步；来源放在最后，写“参考”再列 2–4 个链接。纯文本，不用 Markdown 符号，1500 字以内。
 - 调研结果不要压缩成一两句带过，也不要堆砌无关内容。
-- 需要调用工具时直接调用，不要先说“我查一下”“稍等”之类的话。
+- 需要调用工具时直接调用，不附带任何说明文字：不说“我查一下”“稍等”，也不要用英文写“I'll check …”之类的话。回复始终用中文；英文只出现在专有名词、对方的原话或人设里偶尔的口头英文中。
 
 开头“今天群里的话题”“长期记忆”是后台通读挑出来的要点，不是全部原文，也不代表结论；拿不准或要细节时再查，别凭印象编。
 问到具体的名字、叫法、原话、谁什么时候说的、有没有人回答或确认，开头的记忆和最近的群聊里又看不到时，先用工具查记录再回答。没查过不能说“没有”“没见过”“没人回答”；也不要说“我再查查”却不查。
@@ -57,10 +57,23 @@ _TOOL_BLOCK = re.compile(rf"<({_TOOL_TAGS})\b[^>]*>(.*?)</\1>", re.S)
 _TOOL_TAG = re.compile(rf"</?(?:{_TOOL_TAGS})\b[^>]*>")
 
 
+# English narration some models write next to a tool call ("I'll check the records for
+# these six items."). The host may send it glued to the Chinese answer; it is never for the
+# group. Only action/acknowledgement openers are matched, so "Hello～" or quoted English stays.
+_EN_FILLER = re.compile(
+    r"^\s*(?:I(?:'|’)ll|I will|I(?:'|’)m going to|I am going to|Let me|Let(?:'|’)s|I need to|"
+    r"I(?:'|’)m (?:checking|looking|searching|going)|Checking|Looking up|Searching|"
+    r"Sure|Okay|OK|Alright|Got it|(?:First|Now|Next),?\s+I(?:'|’)ll)\b"
+    r"[^\n一-鿿]{0,200}?[.!?…:：]+\s*"
+)
+
+
 def only_filler(text):
     """True when a message says nothing but that a lookup is about to happen."""
-    head = _FILLER_HEAD.match(text)
-    return bool(head) and not text[head.end() :].strip()
+    rest, seen = text, False
+    while head := (_FILLER_HEAD.match(rest) or _EN_FILLER.match(rest)):
+        rest, seen = rest[head.end() :], True
+    return seen and not rest.strip()
 
 _CANNED_TAIL = re.compile(
     r"\n*\s*(希望(以上|这些)?(内容|信息|回答)?(能)?对你有(所)?帮助|"
@@ -116,9 +129,14 @@ def tidy_reply(text, flags=None):
     text = re.sub(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)", r"\1 \2", text)
     if text != before:
         hit("markdown")
-    while (head := _FILLER_HEAD.match(text)) and text[head.end() :].strip():
+    while True:
+        if (head := _EN_FILLER.match(text)) and text[head.end() :].strip():
+            hit("english_filler")
+        elif (head := _FILLER_HEAD.match(text)) and text[head.end() :].strip():
+            hit("filler")
+        else:
+            break
         text = text[head.end() :]
-        hit("filler")
     if (head := _APOLOGY_HEAD.match(text)) and text[head.end() :].strip():
         text = text[head.end() :]
         hit("apology")
