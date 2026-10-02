@@ -8,7 +8,7 @@ from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.star import Context, Star, StarTools
 
 from .secretary.config import Config
-from .secretary.dialogue import only_filler, tidy_reply
+from .secretary.dialogue import banned_in, drop_banned, only_filler, tidy_reply
 from .secretary.engine import Engine
 from .secretary.types import Actor, Message, utcnow
 from .secretary.web import AuditServer
@@ -463,21 +463,45 @@ class GroupSecretary(Star):
 
     @filter.on_llm_response()
     async def retry_empty_answer(self, event: AstrMessageEvent, resp):
-        """Answer once more when the host agent's final reply is empty or only filler.
+        """Fix the host agent's final reply before it is sent.
 
-        The host calls this for the main agent's last response, before it is sent.
-        A model that says "let me check" and stops without a tool call would
-        otherwise leave the asker with nothing, since the filler is dropped.
+        The host calls this for the main agent's last response. An empty or
+        filler-only reply is answered once more: a model that says "let me check"
+        and stops without a tool call would otherwise leave the asker with nothing,
+        since the filler is dropped. A reply that uses a phrase from
+        dialogue.banned_phrases is reworded once; if the rewording still uses one,
+        the sentences with it are removed, so a banned phrase never reaches the group.
         """
         state = event.get_extra(STATE_KEY)
-        if not state or not self.engine or state["operations"]:
+        if not state or not self.engine:
             return
         text = getattr(resp, "completion_text", "") or ""
-        if text.strip() and not only_filler(text):
-            return
         flags = state["style_flags"]
-        flags["empty_retry"] = flags.get("empty_retry", 0) + 1
-        answer = ""
+        if not state["operations"] and (not text.strip() or only_filler(text)):
+            flags["empty_retry"] = flags.get("empty_retry", 0) + 1
+            answer = await self._answer_again(
+                event, state, self.engine.conversation.native_retry_prompt(state), "an empty answer"
+            )
+            if not answer or only_filler(answer):
+                answer = "这次没整理出答案，麻烦再@我问一次～"
+            resp.completion_text = text = answer
+        phrases = self.engine.config.banned_phrases
+        found = banned_in(text, phrases)
+        if found:
+            flags["banned_rewrite"] = flags.get("banned_rewrite", 0) + 1
+            answer = await self._answer_again(
+                event,
+                state,
+                self.engine.conversation.native_rewrite_prompt(state, text, found),
+                "a banned phrase",
+            )
+            if not answer or only_filler(answer) or banned_in(answer, phrases):
+                flags["banned_dropped"] = flags.get("banned_dropped", 0) + 1
+                answer = drop_banned(answer if answer and not only_filler(answer) else text, phrases)
+            resp.completion_text = answer
+
+    async def _answer_again(self, event, state, prompt, reason):
+        """One tool-free call on the turn's model and system prompt; '' on failure."""
         try:
             provider = event.get_extra(
                 "selected_provider"
@@ -488,19 +512,18 @@ class GroupSecretary(Star):
                 self.context.llm_generate(
                     chat_provider_id=provider,
                     system_prompt=state.get("system_prompt", ""),
-                    prompt=self.engine.conversation.native_retry_prompt(state),
+                    prompt=prompt,
                 ),
                 timeout=60,
             )
-            answer = (result.completion_text or "").strip()
+            return (result.completion_text or "").strip()
         except Exception as exc:
             self.logger.warning(
-                "Group secretary retry after an empty answer failed (%s).",
+                "Group secretary answering again after %s failed (%s).",
+                reason,
                 type(exc).__name__,
             )
-        if not answer or only_filler(answer):
-            answer = "这次没整理出答案，麻烦再@我问一次～"
-        resp.completion_text = answer
+            return ""
 
     @filter.on_decorating_result()
     async def finish_group_turn(self, event: AstrMessageEvent):

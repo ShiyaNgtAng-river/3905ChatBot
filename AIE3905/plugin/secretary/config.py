@@ -49,6 +49,14 @@ class Config:
         self.deep_provider = dialogue.get("deep_provider", "")
         if not all(isinstance(x, str) for x in (self.fast_provider, self.deep_provider)):
             raise ValueError("dialogue.fast_provider/deep_provider 必须是宿主 Provider ID")
+        # Expressions a reply must never use; a reply that does is reworded once.
+        self.banned_phrases = dialogue.get("banned_phrases", ["接住"])
+        if (
+            not isinstance(self.banned_phrases, list)
+            or len(self.banned_phrases) > 50
+            or not all(isinstance(x, str) and 1 <= len(x) <= 20 for x in self.banned_phrases)
+        ):
+            raise ValueError("dialogue.banned_phrases 必须是最多 50 个、每个 1–20 字的说法")
         if not isinstance(self.deep_keywords, list) or not all(
             isinstance(w, str) and 1 <= len(w) <= 10 for w in self.deep_keywords
         ):

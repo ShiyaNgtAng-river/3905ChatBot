@@ -556,6 +556,41 @@ class NativeFrontendTests(PluginHarness):
         flags = ev.get_extra("groupsecretary_turn")["style_flags"]
         self.assertEqual(flags["empty_retry"], 2)
 
+    async def test_banned_phrase_is_reworded_and_never_sent(self):
+        calls, answers = [], []
+
+        async def llm_generate(**kw):
+            calls.append(kw)
+            return types.SimpleNamespace(completion_text=answers.pop(0))
+
+        self.plugin.context.llm_generate = llm_generate
+        self.plugin.engine.config.fast_provider = "fast-model"
+        ev = await self.mention("你为什么不回我", "b1")
+        req = Request(["search_group_history"])
+        await self.plugin.inject_group_context(ev, req)
+        self.assertNotIn("接住", req.system_prompt)  # our own guide does not model it
+        answers.append("你这一串我都收到了，别急～")
+        resp = types.SimpleNamespace(completion_text="你这一串我都接住了，别急～")
+        await self.plugin.retry_empty_answer(ev, resp)
+        self.assertEqual(resp.completion_text, "你这一串我都收到了，别急～")
+        self.assertIn("你这一串我都接住了", calls[0]["prompt"])
+        self.assertIn("「接住」", calls[0]["prompt"])
+        # The rewording still uses it: the sentences with it are removed.
+        answers.append("接住啦！别急，我在呢～")
+        resp = types.SimpleNamespace(completion_text="我接住了。")
+        await self.plugin.retry_empty_answer(ev, resp)
+        self.assertEqual(resp.completion_text, "别急，我在呢～")
+        # Nothing reworded at all (the call failed): only the clause with it goes.
+        answers.append("")
+        resp = types.SimpleNamespace(completion_text="你这一串我都接住了，别急～")
+        await self.plugin.retry_empty_answer(ev, resp)
+        self.assertEqual(resp.completion_text, "别急～")
+        clean = types.SimpleNamespace(completion_text="在呢在呢。")
+        await self.plugin.retry_empty_answer(ev, clean)
+        self.assertEqual((clean.completion_text, len(calls)), ("在呢在呢。", 3))
+        flags = ev.get_extra("groupsecretary_turn")["style_flags"]
+        self.assertEqual((flags["banned_rewrite"], flags["banned_dropped"]), (3, 2))
+
     async def test_imitated_tool_markup_and_more_filler_are_removed(self):
         from contract_plugin.secretary.dialogue import only_filler, tidy_reply
 
