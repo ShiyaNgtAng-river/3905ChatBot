@@ -867,7 +867,7 @@ class Dialogue:
             # "今天/昨天" is computed here: models misjudge dates just after midnight.
             local = datetime.fromisoformat(at).astimezone(tz)
             day = {0: "（今天）", 1: "（昨天）"}.get((today - local.date()).days, "")
-            return f"{local:%m-%d}{day} {local:%H:%M}"
+            return f"{local:%Y-%m-%d}{day} {local:%H:%M}"
 
         def one_line(text, n):
             text = " ".join(str(text).split())

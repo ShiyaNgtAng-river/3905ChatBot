@@ -226,7 +226,7 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
                     {"op": "record", "topic": f"a{topic}", "text": "10-06 20:05 小余说急救包他带", "m": [s2[1]]},
                 ],
             }
-            if "10-05 老张定了周六早上八点东门集合爬山" in payload.replace("10-05 09:05 ", "")
+            if "  2026-10-05 09:05 老张定了周六早上八点东门集合爬山" in payload  # listed with the year
             else {"qa": [], "ops": []}
         )
         self.assertEqual(await self.r.consolidate("demo", at(7, 5)), "2026-10-06")
@@ -274,7 +274,7 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(line["context"]["records"], "2026-10-05 至 2026-10-06")
         related = line["context"]["related_topics"][0]
         self.assertEqual(related["topic"], "周末爬山")
-        self.assertIn("2026-10-05 10-05 09:05 老张定了周六早上八点东门集合爬山", related["records"])
+        self.assertIn("2026-10-05 09:05 老张定了周六早上八点东门集合爬山", related["records"])
         self.assertEqual(line["results"][0]["topic"], "周末爬山")
         self.model()
         empty = json.loads(await self.e.conversation.native_tool_async(st, "read_day", {"when": "09-24", "question": "几点"}))
@@ -476,6 +476,9 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pin_years("〔12-30〕说跨年回家", "2027-01-02"), "〔2026-12-30〕说跨年回家")
         self.assertEqual(pin_years("〔01-03〕要考试", "2026-12-30"), "〔2027-01-03〕要考试")
         self.assertEqual(pin_years("〔2026-09-29〕不变", "2026-10-02"), "〔2026-09-29〕不变")
+        # Long-term records start with "MM-DD HH:MM"; a full date is left alone.
+        self.assertEqual(pin_years("12-31 23:50 老张说跨年见", "2027-01-01"), "2026-12-31 23:50 老张说跨年见")
+        self.assertEqual(pin_years("2026-10-05 09:05 已有年份", "2026-10-05"), "2026-10-05 09:05 已有年份")
 
     async def test_expiry_trims_the_portrait_and_recall_removes_it(self):
         s, react, _ = await self.distilled_day()

@@ -98,7 +98,7 @@ def render(opening,claims,sources,tz):
         lines.append(f"• {c['text']} {refs}")
     lines.append("\n依据：")
     for uid,m in sources.items():
-        at=datetime.fromisoformat(m["at"]).astimezone(ZoneInfo(tz)).strftime("%m-%d %H:%M")
+        at=datetime.fromisoformat(m["at"]).astimezone(ZoneInfo(tz)).strftime("%Y-%m-%d %H:%M")
         native=m["native_id"] or uid[:12]
         text=m["text"].replace("\n"," ")[:120]
         lines.append(f"[{numbers[uid]}] {at} {m['name'] or m['sender']}：{text}（消息 {native}）")

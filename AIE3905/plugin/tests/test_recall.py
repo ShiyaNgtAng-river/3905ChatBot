@@ -257,9 +257,9 @@ class RecallTests(unittest.IsolatedAsyncioTestCase):
         now = datetime.fromisoformat(s["m"]["at"]).astimezone(tz)
         then = datetime.fromisoformat(asked.at).astimezone(tz)
         label = {0: "（今天）", 1: "（昨天）"}.get((now.date() - then.date()).days, "")
-        quoted = f"回复小余 {then:%m-%d}{label} {then:%H:%M}「明天能不能提前刷个2背包开」] @小余 可以"
+        quoted = f"回复小余 {then:%Y-%m-%d}{label} {then:%H:%M}「明天能不能提前刷个2背包开」] @小余 可以"
         self.assertIn(quoted, prompt)
-        self.assertIn(f"时间 {now:%m-%d}（今天） {now:%H:%M}", prompt)
+        self.assertIn(f"时间 {now:%Y-%m-%d}（今天） {now:%H:%M}", prompt)
 
     async def test_recent_stock_replies_are_named_before_the_next_turn(self):
         from secretary.dialogue import recent_repeats
