@@ -6,7 +6,8 @@ import asyncio
 import json
 import re
 import uuid
-from datetime import datetime
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from .memory import validate_candidates
@@ -66,6 +67,64 @@ _EN_FILLER = re.compile(
     r"Sure|Okay|OK|Alright|Got it|(?:First|Now|Next),?\s+I(?:'|’)ll)\b"
     r"[^\n一-鿿]{0,200}?[.!?…:：]+\s*"
 )
+
+
+# Stock concessions and apologies. Said once they are fine; said in reply after reply they
+# read as a script, and the model cannot notice because each reply is generated alone.
+_STOCK_REPLY = re.compile(
+    r"我改|我错了|是我不对|算我不对|对不起|抱歉|我的锅|嘴快了|收着点|收一收|记岔了?|搞错了"
+    r"|被你发现了|被发现了|不是那个意思|别生气|温柔一点|你说得对|我认了"
+)
+
+
+def recent_repeats(outputs, user_text, window=3, generic=2):
+    """Phrases the bot keeps reusing in its last few replies, to name before the next one.
+
+    Returns stock responses (apologies, concessions) found in any of the last `window`
+    replies, then up to `generic` other four-character phrases that appear in every one of
+    them (the kind of remark repeated reply after reply). Phrases from the current message
+    are left out, as are fragments that start or end with a particle.
+
+    Args:
+        outputs: The bot's earlier replies in this conversation, oldest first.
+        user_text: The message being answered now.
+        window: How many recent replies to look at.
+        generic: Maximum number of non-stock phrases to return.
+
+    Returns:
+        A list of phrases, stock ones first.
+    """
+    recent = [o for o in outputs if o][-window:]
+    stock = []
+    for output in recent:
+        for found in _STOCK_REPLY.findall(output):
+            if found not in stock:
+                stock.append(found)
+    if len(recent) < window:
+        return stock
+
+    def grams(text, n):
+        text = re.sub(r"[^一-鿿]", "", text)
+        return {text[i : i + n] for i in range(len(text) - n + 1)}
+
+    def pairs(g):
+        return {g[i : i + 2] for i in range(len(g) - 1)}
+
+    given = grams(user_text, 3)
+    shared = set.intersection(*(grams(o, 4) for o in recent))
+    picked = []
+    for g in sorted(shared):
+        if g[0] in _EDGE or g[-1] in _EDGE or any(g in x or x in g for x in stock):
+            continue
+        if grams(g, 3) & given:  # overlaps what the user is talking about now
+            continue
+        if not any(pairs(g) & pairs(p) for p in picked):
+            picked.append(g)
+    return stock + picked[:generic]
+
+
+# Characters that rarely begin or end a phrase; fragments cut there are noise.
+_EDGE = set("了的是着过吗呢吧啊呀啦嘛哦和就也都还又")
 
 
 def only_filler(text):
@@ -837,6 +896,11 @@ class Dialogue:
                 "SELECT at,output FROM answers WHERE group_key=? AND at<=? ORDER BY at DESC LIMIT ?",
                 (key, utcnow(), limit),
             )
+            # Only the current stretch of conversation: replies from earlier today don't count.
+            since = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+            s["avoid"] = recent_repeats(
+                [a["output"] for a in reversed(answers) if a["at"] >= since], m.get("text", "")
+            )
             lines += [
                 (a["at"], 1, f"[{clock(a['at'])} 你] {one_line(a['output'], 200)}")
                 for a in answers
@@ -913,6 +977,11 @@ class Dialogue:
         if words:
             parts.append(
                 f"当前消息里有“{'”“'.join(words)}”：这次按深度调研的方式回答。"
+            )
+        if s.get("avoid"):
+            parts.append(
+                "你最近几条回复里已经用过这些说法：「" + "」「".join(s["avoid"]) + "」。这次别再用。"
+                "真要认错就换个方式：说清是哪里错了、问一句是哪句、自嘲一句或者撒个娇；没必要认错就不认。"
             )
         parts.append(NATIVE_GUIDE)
         return "\n".join(parts)
@@ -1050,6 +1119,7 @@ class Dialogue:
                             {
                                 "prompt_version": "native-1.2",
                                 "style_flags": s["style_flags"],
+                                "avoid_phrases": s.get("avoid", []),
                                 "draft_ids": [d["id"] for d in s["drafts"]],
                                 "operations": s["operations"],
                             }
@@ -1078,6 +1148,7 @@ class Dialogue:
                         {
                             "prompt_version": "native-1.2",
                             "style_flags": s["style_flags"],
+                            "avoid_phrases": s.get("avoid", []),
                             "draft_ids": [d["id"] for d in s["drafts"]],
                             "operations": s["operations"],
                         }

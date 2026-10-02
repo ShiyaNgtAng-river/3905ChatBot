@@ -261,6 +261,30 @@ class RecallTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(quoted, prompt)
         self.assertIn(f"时间 {now:%m-%d}（今天） {now:%H:%M}", prompt)
 
+    async def test_recent_stock_replies_are_named_before_the_next_turn(self):
+        from secretary.dialogue import recent_repeats
+
+        self.assertEqual(recent_repeats(["好，我改。", "收到"], "你又错了"), ["我改"])
+        self.assertEqual(
+            recent_repeats(["凌晨两点了还不睡呀", "凌晨两点还在群里", "凌晨两点你还在"], "你好蠢"), ["凌晨两点"]
+        )
+        # Fewer replies than the window: only stock phrases, no guessing at repetition.
+        self.assertEqual(recent_repeats(["凌晨两点了", "凌晨两点了"], "嗯"), [])
+        # A phrase the user is saying now is not a tic to avoid.
+        self.assertEqual(recent_repeats(["祥子同学很强", "祥子同学很冷", "祥子同学很稳"], "祥子同学呢"), [])
+        await self.chat()
+        now = utcnow()
+        with self.e.store.tx() as db:
+            for i, output in enumerate(["哪句？我改。", "诶，我改还不行嘛。"]):
+                db.execute(
+                    "INSERT INTO answers(id,group_key,actor,at,question,output,sources,item_ids,mode,trace) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (f"a{i}", "demo", "owner", now, "q", output, "[]", "[]", "native", "{}"),
+                )
+        s = self.state("你又记错了")
+        prompt = self.e.conversation.native_prompt(s, "老张")
+        self.assertIn("你最近几条回复里已经用过这些说法：「我改」", prompt)
+        self.assertEqual(s["avoid"], ["我改"])
+
     async def test_retry_prompt_carries_a_search_for_the_question(self):
         await self.chat()
         s = self.state("谁负责订大巴")
