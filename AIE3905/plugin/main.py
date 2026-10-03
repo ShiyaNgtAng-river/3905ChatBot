@@ -13,6 +13,8 @@ from .secretary.engine import Engine
 from .secretary.types import Actor, Message, utcnow
 from .secretary.web import AuditServer
 
+# What the model reads when someone only @-mentions the bot; the guide explains it.
+BARE_MENTION = "（只@了你，没说别的）"
 STATE_KEY = "groupsecretary_turn"
 GROUP_TOOLS = {
     "search_group_history",
@@ -265,6 +267,10 @@ class GroupSecretary(Star):
             )
             # Everyday mentions run on the fast model; only research-style requests
             # pay for the slower reasoning model.
+            # The host skips a message with no text, media or quote. A bare @ still
+            # deserves a word back, like a friend calling your name.
+            if not text and not attachments and not reply:
+                event.message_str = BARE_MENTION
             cfg = self.engine.config
             deep = any(w in text for w in cfg.deep_keywords)
             provider = cfg.deep_provider if deep else cfg.fast_provider

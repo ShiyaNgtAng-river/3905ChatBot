@@ -22,6 +22,8 @@ NATIVE_GUIDE = """先按人设里“先听懂”的方式读当前发言人：�
 看看标“你”的那些之前的回复，别把说过的话原样再说一遍；同一个人刚问过几乎一样的问题又问一次，就换个说法；不同的问题别当成重复提问，也别调侃对方在“测试你”。
 
 开头的“你对大家的印象”“相处心得”“今天群友对你说过的话”是你平时慢慢攒下的了解：用来懂人、接梗、调整说话的方式，不复述给对方听，不拿来翻旧账。印象是看法不是事实，事实问题照样以记录为准。里面的〔年-月-日〕是日期：按当前时间判断那是多久以前的事，别把以前的事说成今天的。
+群聊记录里的时间、记忆和印象都是帮你听懂的背景：不主动报现在几点；不拿对方以前的事（昨晚熬夜、上次说过的话）来提醒、关心或说教，除非他自己先提起。
+当前消息是“（只@了你，没说别的）”时，是有人在叫你：像被朋友点名一样应一声，看看前面的群聊猜猜他想干嘛。
 
 回答深浅先按意图判断：
 - 闲聊、玩笑、打招呼、随口的看法：按人设自然地接，一两句就够。
@@ -43,7 +45,7 @@ NATIVE_GUIDE = """先按人设里“先听懂”的方式读当前发言人：�
 给出可以被采用的安排时用 save_group_drafts 保存，它只是建议；改方案时 parent_id 填原草案 id。
 有人明确拍板采用某个草案时，用 submit_group_events 提交 {"kind":"confirm","draft_id":草案id}。是否成为正式记录由系统按权限决定，以工具返回为准，不要自己宣称“已记录”。
 只是讨论、比较、修改时不要提交正式事件。
-做不到的事用一句自然的话带过，不解释自己的系统能力或限制；同样的解释不说第二遍。不承诺以后主动提醒、帮忙盯着或通知谁，你只在被问到时回答。
+做不到的事用一句自然的话带过，不解释自己的系统能力或限制；同样的解释不说第二遍。被问“为什么不回我”“为什么没做”时不找理由（没看到、没加载出来之类），认一句漏了就接着回他，或者直接把事做了。不承诺以后主动提醒、帮忙盯着或通知谁，你只在被问到时回答。
 语气和性格按你的人设；不用 Markdown 标题、加粗和表格（QQ 不显示），不说“作为AI”“希望对你有帮助”。"""
 
 # Filler the model says before a tool call; the host merges it into the answer.
@@ -80,13 +82,15 @@ _STOCK_REPLY = re.compile(
 )
 
 
-def recent_repeats(outputs, user_text, window=3, generic=2):
+def recent_repeats(outputs, user_text, window=4, generic=3):
     """Phrases the bot keeps reusing in its last few replies, to name before the next one.
 
     Returns stock responses (apologies, concessions) found in any of the last `window`
-    replies, then up to `generic` other four-character phrases that appear in every one of
-    them (the kind of remark repeated reply after reply). Phrases from the current message
-    are left out, as are fragments that start or end with a particle.
+    replies, then up to `generic` other three- or four-character phrases that appear in
+    at least two of them, most widespread first (the remark repeated reply after reply,
+    such as the time of day or what the person is busy with). Letters count, so "改bot"
+    is a phrase. Phrases sharing a two-character word with the current message are left
+    out, as are fragments that start or end with a particle or pronoun.
 
     Args:
         outputs: The bot's earlier replies in this conversation, oldest first.
@@ -103,31 +107,41 @@ def recent_repeats(outputs, user_text, window=3, generic=2):
         for found in _STOCK_REPLY.findall(output):
             if found not in stock:
                 stock.append(found)
-    if len(recent) < window:
+    if len(recent) < 2:
         return stock
 
     def grams(text, n):
-        text = re.sub(r"[^一-鿿]", "", text)
+        text = re.sub(r"[^一-鿿A-Za-z0-9]", "", text)
         return {text[i : i + n] for i in range(len(text) - n + 1)}
 
     def pairs(g):
         return {g[i : i + 2] for i in range(len(g) - 1)}
 
-    given = grams(user_text, 3)
-    shared = set.intersection(*(grams(o, 4) for o in recent))
+    given = grams(user_text, 2)
+    counts = Counter(g for o in recent for g in grams(o, 3) | grams(o, 4))
+    edge = _EDGE | set("我你他她它")
     picked = []
-    for g in sorted(shared):
-        if g[0] in _EDGE or g[-1] in _EDGE or any(g in x or x in g for x in stock):
+    for g in sorted((g for g, n in counts.items() if n >= 2), key=lambda g: (-counts[g], -len(g), g)):
+        if g[0] in edge or g[-1] in edge or not re.search(r"[一-鿿]", g):
             continue
-        if grams(g, 3) & given:  # overlaps what the user is talking about now
-            continue
-        if not any(pairs(g) & pairs(p) for p in picked):
+        if any(g in x or x in g for x in stock) or pairs(g) & given:
+            continue  # a stock phrase, or what the user is talking about now
+        if not any(g in p or p in g or pairs(g) & pairs(p) for p in picked):
             picked.append(g)
     return stock + picked[:generic]
 
 
 # Characters that rarely begin or end a phrase; fragments cut there are noise.
 _EDGE = set("了的是着过吗呢吧啊呀啦嘛哦和就也都还又")
+
+
+def _join_paragraph(m):
+    """What replaces a paragraph break: nothing after closing punctuation or an emoji,
+    else a comma."""
+    prev = m.string[: m.start()].rstrip()[-1:]
+    if not prev or prev in "。！？!?～~…）)」』】" or ord(prev) >= 0x1F000 or 0x2600 <= ord(prev) <= 0x27BF:
+        return ""
+    return "，"
 
 
 def banned_in(text, phrases):
@@ -223,6 +237,11 @@ def tidy_reply(text, flags=None):
     if stripped and stripped != text.rstrip():
         hit("canned_tail")
     result = stripped or text.strip()
+    # A chat reply is one message: a blank line splits it into two paragraphs.
+    # Numbered answers (research, step lists) keep their layout.
+    if re.search(r"\n\s*\n", result) and not re.search(r"^\s*\d+[、.．)）]", result, re.M):
+        result = re.sub(r"\s*\n\s*\n\s*", _join_paragraph, result)
+        hit("blank_line")
     for name, pattern in _STYLE_NOTES:
         if pattern.search(result):
             hit(name)
