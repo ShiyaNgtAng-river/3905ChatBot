@@ -261,6 +261,17 @@ class RecallTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(quoted, prompt)
         self.assertIn(f"时间 {now:%Y-%m-%d}（今天） {now:%H:%M}", prompt)
 
+    def test_a_chat_reply_is_one_paragraph(self):
+        from secretary.dialogue import tidy_reply
+
+        flags = []
+        text = "行啦行啦，我这不是在吗～\n\n到底啥事让你气成这样？"
+        self.assertEqual(tidy_reply(text, flags), "行啦行啦，我这不是在吗～到底啥事让你气成这样？")
+        self.assertIn("blank_line", flags)
+        self.assertEqual(tidy_reply("先说结论\n\n然后再看"), "先说结论，然后再看")
+        numbered = "最要紧的一点是缓存。\n\n1. 先清缓存\n\n2. 再重启"
+        self.assertEqual(tidy_reply(numbered), numbered)  # a numbered answer keeps its layout
+
     async def test_recent_stock_replies_are_named_before_the_next_turn(self):
         from secretary.dialogue import recent_repeats
 
@@ -268,8 +279,15 @@ class RecallTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             recent_repeats(["凌晨两点了还不睡呀", "凌晨两点还在群里", "凌晨两点你还在"], "你好蠢"), ["凌晨两点"]
         )
-        # Fewer replies than the window: only stock phrases, no guessing at repetition.
-        self.assertEqual(recent_repeats(["凌晨两点了", "凌晨两点了"], "嗯"), [])
+        # Two replies with the same remark are enough; one reply is not a pattern.
+        self.assertEqual(recent_repeats(["凌晨两点了", "凌晨两点了"], "嗯"), ["凌晨两点"])
+        self.assertEqual(recent_repeats(["凌晨两点了"], "嗯"), [])
+        # The same time and topic brought up in reply after reply, letters included
+        # (live replies, 2026-10-02): named even when the latest reply skipped them.
+        live = ["晚上好呀～都十点半了，改bot的进度怎么样？别又熬太晚哦。",
+                "晚上还发这个，是改bot改到看开了，还是bug终于修明白啦？十点半了，别躺平哦～",
+                "诶，你刚才那一串表情包连环炮我正看着呢，重新丢一句给我～"]
+        self.assertEqual(sorted(recent_repeats(live, "你为什么不回复我")), ["十点半", "改bot"])
         # A phrase the user is saying now is not a tic to avoid.
         self.assertEqual(recent_repeats(["祥子同学很强", "祥子同学很冷", "祥子同学很稳"], "祥子同学呢"), [])
         await self.chat()

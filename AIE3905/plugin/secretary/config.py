@@ -50,7 +50,7 @@ class Config:
         if not all(isinstance(x, str) for x in (self.fast_provider, self.deep_provider)):
             raise ValueError("dialogue.fast_provider/deep_provider 必须是宿主 Provider ID")
         # Expressions a reply must never use; a reply that does is reworded once.
-        self.banned_phrases = dialogue.get("banned_phrases", ["接住"])
+        self.banned_phrases = dialogue.get("banned_phrases", ["接住", "我这边"])
         if (
             not isinstance(self.banned_phrases, list)
             or len(self.banned_phrases) > 50

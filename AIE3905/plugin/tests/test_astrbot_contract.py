@@ -556,6 +556,18 @@ class NativeFrontendTests(PluginHarness):
         flags = ev.get_extra("groupsecretary_turn")["style_flags"]
         self.assertEqual(flags["empty_retry"], 2)
 
+    async def test_a_bare_mention_still_reaches_the_model(self):
+        ev = await self.mention("", "bare1")
+        self.assertEqual(ev.message_str, "（只@了你，没说别的）")  # the host skips empty text
+        req = Request(["search_group_history"])
+        await self.plugin.inject_group_context(ev, req)
+        self.assertIn("只@了你，没说别的", req.system_prompt)  # the guide says what it means
+        self.assertIn("不主动报现在几点", req.system_prompt)
+        self.assertIn("不找理由", req.system_prompt)
+        spoken = await self.mention("在吗", "bare2")
+        self.assertFalse(hasattr(spoken, "message_str"))
+        self.assertIn("我这边", self.plugin.engine.config.banned_phrases)
+
     async def test_banned_phrase_is_reworded_and_never_sent(self):
         calls, answers = [], []
 
