@@ -7,6 +7,15 @@ from zoneinfo import ZoneInfo
 from .types import Group
 
 
+def phrases_ok(value):
+    """A banned-phrase list: at most 50 phrases of 1–20 characters."""
+    return (
+        isinstance(value, list)
+        and len(value) <= 50
+        and all(isinstance(x, str) and 1 <= len(x) <= 20 for x in value)
+    )
+
+
 class Config:
     def __init__(self, data: dict, base: str | Path = "."):
         self.raw = data
@@ -51,12 +60,12 @@ class Config:
             raise ValueError("dialogue.fast_provider/deep_provider 必须是宿主 Provider ID")
         # Expressions a reply must never use; a reply that does is reworded once.
         self.banned_phrases = dialogue.get("banned_phrases", ["接住", "我这边"])
-        if (
-            not isinstance(self.banned_phrases, list)
-            or len(self.banned_phrases) > 50
-            or not all(isinstance(x, str) and 1 <= len(x) <= 20 for x in self.banned_phrases)
-        ):
+        if not phrases_ok(self.banned_phrases):
             raise ValueError("dialogue.banned_phrases 必须是最多 50 个、每个 1–20 字的说法")
+        # A persona may bring its own rules in <persona_rules_dir>/<persona_id>.json;
+        # personas without a file use the lists above.
+        self.persona_rules_dir = self.base / dialogue.get("persona_rules_dir", "persona_rules")
+        self._persona_rules = {}
         if not isinstance(self.deep_keywords, list) or not all(
             isinstance(w, str) and 1 <= len(w) <= 10 for w in self.deep_keywords
         ):
@@ -157,6 +166,38 @@ class Config:
     def load(cls, path: str | Path):
         path = Path(path).resolve()
         return cls(json.loads(path.read_text(encoding="utf-8")), path.parent)
+
+    def persona_rules(self, persona_id):
+        """Rules for the persona answering this turn.
+
+        Read from persona_rules_dir/<persona_id>.json and reread when the file
+        changes. File format: {"persona_id": "...", "banned_phrases": [...]}.
+
+        Returns:
+            {"banned_phrases": [...], "source": file name or ""}, plus "error" with
+            the file name when the file is invalid; the global lists apply then.
+        """
+        default = {"banned_phrases": list(self.banned_phrases), "source": ""}
+        if not persona_id or Path(persona_id).name != persona_id or len(persona_id) > 100:
+            return default
+        path = self.persona_rules_dir / (persona_id + ".json")
+        try:
+            stamp = path.stat().st_mtime_ns
+        except OSError:
+            return default
+        cached = self._persona_rules.get(persona_id)
+        if cached and cached[0] == stamp:
+            return cached[1]
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+            phrases = data.get("banned_phrases", self.banned_phrases)
+            if data.get("persona_id") != persona_id or not phrases_ok(phrases):
+                raise ValueError("invalid persona rules")
+            rules = {"banned_phrases": list(phrases), "source": path.name}
+        except (OSError, ValueError, AttributeError):
+            rules = dict(default, error=path.name)
+        self._persona_rules[persona_id] = (stamp, rules)
+        return rules
 
     def group(self, key: str) -> Group:
         g = self.groups.get(key)

@@ -347,6 +347,14 @@ class GroupSecretary(Star):
             + self.engine.conversation.native_prompt(state, event.get_sender_name())
         )
         state["system_prompt"] = req.system_prompt
+        # Each persona may bring its own rules; the reply hook applies them.
+        state["persona_id"] = await self._persona_id(event, req)
+        rules = self.engine.config.persona_rules(state["persona_id"])
+        state["banned_phrases"] = rules["banned_phrases"]
+        if rules.get("error"):
+            self.logger.warning(
+                "Persona rules %s are invalid; using the global rules.", rules["error"]
+            )
         # Next to the current message, not saved to history: a note at the end of the long
         # system prompt did not stop the model from repeating itself.
         reminder = self.engine.conversation.native_reminder(state)
@@ -363,6 +371,26 @@ class GroupSecretary(Star):
                 for name in names:
                     if name != handoff and name.startswith(prefixes):
                         tools.remove_tool(name)
+
+    async def _persona_id(self, event, req):
+        """The persona the host applies to this request; '' when it cannot tell."""
+        manager = getattr(self.context, "persona_manager", None)
+        if manager is None:
+            return ""
+        try:
+            persona_id, *_ = await manager.resolve_selected_persona(
+                umo=event.unified_msg_origin,
+                conversation_persona_id=getattr(
+                    getattr(req, "conversation", None), "persona_id", None
+                ),
+                platform_name=event.get_platform_name(),
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "Group secretary could not tell the persona (%s).", type(exc).__name__
+            )
+            return ""
+        return persona_id if isinstance(persona_id, str) else ""
 
     def _group_tool(self, event, name, args):
         state = event.get_extra(STATE_KEY)
@@ -491,7 +519,7 @@ class GroupSecretary(Star):
             if not answer or only_filler(answer):
                 answer = "这次没整理出答案，麻烦再@我问一次～"
             resp.completion_text = text = answer
-        phrases = self.engine.config.banned_phrases
+        phrases = state.get("banned_phrases", self.engine.config.banned_phrases)
         found = banned_in(text, phrases)
         if found:
             flags["banned_rewrite"] = flags.get("banned_rewrite", 0) + 1
