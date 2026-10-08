@@ -590,7 +590,8 @@ class NativeFrontendTests(PluginHarness):
         rules = self.plugin.engine.config.persona_rules_dir
         rules.mkdir()
         (rules / "work_v1.json").write_text(
-            json.dumps({"persona_id": "work_v1", "banned_phrases": ["好问题", "呢"]}, ensure_ascii=False)
+            json.dumps({"persona_id": "work_v1", "banned_phrases": ["好问题", "呢"], "keep_apology": True},
+                       ensure_ascii=False)
         )
 
         async def turn(text, mid):
@@ -604,6 +605,11 @@ class NativeFrontendTests(PluginHarness):
         resp = types.SimpleNamespace(completion_text="好问题，截止日期待确认呢。")
         await self.plugin.retry_empty_answer(ev, resp)
         self.assertEqual(resp.completion_text, "截止日期待确认。")
+        # This persona says one 抱歉 with a correction; the global rules strip it.
+        ev.result = Result("抱歉，我把日期写错了。评审会是周五。")
+        ev.get_result = lambda: ev.result
+        await self.plugin.finish_group_turn(ev)
+        self.assertEqual(ev.result.chain[0].text, "抱歉，我把日期写错了。评审会是周五。")
         # Quoted original words do not count, and this persona's list has no 接住.
         quoted = types.SimpleNamespace(completion_text="群里只说了「月底前交呢」。这件事我接住了。")
         await self.plugin.retry_empty_answer(ev, quoted)
@@ -611,7 +617,12 @@ class NativeFrontendTests(PluginHarness):
         # Without a rules file, or with a broken one, the global list applies.
         default = self.plugin.engine.config.banned_phrases
         selected["id"] = "anon"
-        self.assertEqual((await turn("在吗", "p2"))[1]["banned_phrases"], default)
+        ev2, state2 = await turn("在吗", "p2")
+        self.assertEqual((state2["banned_phrases"], state2["keep_apology"]), (default, False))
+        ev2.result = Result("抱歉，我把日期写错了。评审会是周五。")
+        ev2.get_result = lambda: ev2.result
+        await self.plugin.finish_group_turn(ev2)
+        self.assertEqual(ev2.result.chain[0].text, "我把日期写错了。评审会是周五。")
         (rules / "broken.json").write_text("{")
         selected["id"] = "broken"
         self.assertEqual((await turn("在吗", "p3"))[1]["banned_phrases"], default)

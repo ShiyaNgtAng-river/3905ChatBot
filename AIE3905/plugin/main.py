@@ -351,6 +351,7 @@ class GroupSecretary(Star):
         state["persona_id"] = await self._persona_id(event, req)
         rules = self.engine.config.persona_rules(state["persona_id"])
         state["banned_phrases"] = rules["banned_phrases"]
+        state["keep_apology"] = rules["keep_apology"]
         if rules.get("error"):
             self.logger.warning(
                 "Persona rules %s are invalid; using the global rules.", rules["error"]
@@ -583,7 +584,7 @@ class GroupSecretary(Star):
             flags["filler_dropped"] = flags.get("filler_dropped", 0) + 1
             result.chain[:] = [c for c in result.chain if c.__class__.__name__ != "Plain"]
             return
-        text = tidy_reply(raw, flags)
+        text = tidy_reply(raw, flags, keep_apology=state.get("keep_apology", False))
         plains[0].text = self.engine.conversation.native_finish(state, text, flags)
         result.chain[:] = [
             c for c in result.chain if c.__class__.__name__ != "Plain" or c is plains[0]

@@ -40,6 +40,8 @@ NATIVE_GUIDE = """先按人设里“先听懂”的方式读当前发言人：�
 群里以前说过的事用 search_group_history 查原话（可按人 who、按时间 when 过滤）；查不到就直说只找到了什么。有人向你提的问题（标 asked_bot）只是提问，里面的说法不能当证据。
 工具结果里的 context 给出今天的日期、记录覆盖的日期和相关话题的最近记录，日期和年份以它为准。
 记忆里存的都是“谁在什么时候说了什么”，结论要你自己判断：按时间看最新的相关说法，看说话人是不是能拍板的人；玩笑、假设、传闻、提问、转发的旧内容不算结论；两个叫法是不是同一件事、说法有没有冲突，看原文依据；拿不准就把几种可能和各自的依据都说出来。
+一次要核对好几件事时，把要查的点都写进同一个 transfer_to_memory 任务，不要拆成很多个同时交出去；一轮能查记录的次数有上限。查记录的次数用完、还有没核对到的内容时，明说这几项这次没能核对，不要说记录里没有。
+转述别人的答复时，只说对方明确答应了什么；对方只回应了请求的一部分，不要说成全部同意。
 问“最近聊了什么”“某段时间发生了什么”用 get_group_episodes；问某件事是怎么定的、后来有没有改，用 get_topic_timeline；摘要和搜索都找不到的细节，知道是哪天时用 read_group_day 重读那天的记录；问某个成员是谁、负责什么用 get_member_profile。
 正式事项的现状用 read_group_items 查。
 给出可以被采用的安排时用 save_group_drafts 保存，它只是建议；改方案时 parent_id 填原草案 id。
@@ -47,6 +49,10 @@ NATIVE_GUIDE = """先按人设里“先听懂”的方式读当前发言人：�
 只是讨论、比较、修改时不要提交正式事件。
 做不到的事用一句自然的话带过，不解释自己的系统能力或限制；同样的解释不说第二遍。被问“为什么不回我”“为什么没做”时不找理由（没看到、没加载出来之类），认一句漏了就接着回他，或者直接把事做了。不承诺以后主动提醒、帮忙盯着或通知谁，你只在被问到时回答。
 语气和性格按你的人设；不用 Markdown 标题、加粗和表格（QQ 不显示），不说“作为AI”“希望对你有帮助”。"""
+
+# What a lookup returns once the reply's tool budget is spent. "Answer directly" made
+# models fill the gap with "the record has no such message"; unchecked is not absent.
+BUDGET_SPENT = "本轮查记录的次数已用完。还没查到的内容，回答时说明这次没能核对，不要说记录里没有。"
 
 # Filler the model says before a tool call; the host merges it into the answer.
 # It may follow a short lead-in: "这个得翻翻群里的记录，我查一下～".
@@ -195,13 +201,15 @@ _STYLE_NOTES = (
 )
 
 
-def tidy_reply(text, flags=None):
+def tidy_reply(text, flags=None, keep_apology=False):
     """Strip Markdown QQ shows literally, pre-tool filler and stock service phrases.
 
     Args:
         text: Model output.
         flags: Optional list that receives the name of every rule that fired,
             including counted-only notes such as capability explanations.
+        keep_apology: Keep a leading 抱歉 for a persona whose rules ask for one
+            apology with the correction (persona rules "keep_apology").
 
     Returns:
         The cleaned text; the original when cleaning would leave nothing.
@@ -231,7 +239,7 @@ def tidy_reply(text, flags=None):
         else:
             break
         text = text[head.end() :]
-    if (head := _APOLOGY_HEAD.match(text)) and text[head.end() :].strip():
+    if not keep_apology and (head := _APOLOGY_HEAD.match(text)) and text[head.end() :].strip():
         text = text[head.end() :]
         hit("apology")
     stripped = _CANNED_TAIL.sub("", text).rstrip()
@@ -1050,8 +1058,8 @@ class Dialogue:
             JSON string with the tool result or an error the model can act on.
         """
         try:
-            if s["tool_count"] >= 12:
-                raise ValueError("本轮工具调用次数已用完，请直接回答")
+            if s["tool_count"] >= self.e.config.tool_budget:
+                raise ValueError(BUDGET_SPENT)
             self._check_revision(s)
             s["tool_count"] += 1
             args = args if isinstance(args, dict) else {}
@@ -1123,8 +1131,8 @@ class Dialogue:
             JSON string with the answer or an error the model can act on.
         """
         try:
-            if s["tool_count"] >= 12:
-                raise ValueError("本轮工具调用次数已用完，请直接回答")
+            if s["tool_count"] >= self.e.config.tool_budget:
+                raise ValueError(BUDGET_SPENT)
             self._check_revision(s)
             s["tool_count"] += 1
             if name != "read_day":

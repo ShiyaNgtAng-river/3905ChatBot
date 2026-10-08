@@ -58,6 +58,12 @@ class Config:
         self.deep_provider = dialogue.get("deep_provider", "")
         if not all(isinstance(x, str) for x in (self.fast_provider, self.deep_provider)):
             raise ValueError("dialogue.fast_provider/deep_provider 必须是宿主 Provider ID")
+        # Group-memory tool calls one reply may make, shared with the memory subagent.
+        # A reasoning model splits a many-part question into parallel lookups, so this
+        # is larger than a fast model needs; it only stops runaway loops.
+        self.tool_budget = dialogue.get("tool_budget", 32)
+        if type(self.tool_budget) is not int or not 1 <= self.tool_budget <= 100:
+            raise ValueError("dialogue.tool_budget 必须是 1–100 的整数")
         # Expressions a reply must never use; a reply that does is reworded once.
         self.banned_phrases = dialogue.get("banned_phrases", ["接住", "我这边"])
         if not phrases_ok(self.banned_phrases):
@@ -171,13 +177,15 @@ class Config:
         """Rules for the persona answering this turn.
 
         Read from persona_rules_dir/<persona_id>.json and reread when the file
-        changes. File format: {"persona_id": "...", "banned_phrases": [...]}.
+        changes. File format: {"persona_id": "...", "banned_phrases": [...],
+        "keep_apology": false}; both rule fields are optional.
 
         Returns:
-            {"banned_phrases": [...], "source": file name or ""}, plus "error" with
-            the file name when the file is invalid; the global lists apply then.
+            {"banned_phrases": [...], "keep_apology": bool, "source": file name or ""},
+            plus "error" with the file name when the file is invalid; the global
+            rules apply then.
         """
-        default = {"banned_phrases": list(self.banned_phrases), "source": ""}
+        default = {"banned_phrases": list(self.banned_phrases), "keep_apology": False, "source": ""}
         if not persona_id or Path(persona_id).name != persona_id or len(persona_id) > 100:
             return default
         path = self.persona_rules_dir / (persona_id + ".json")
@@ -191,9 +199,14 @@ class Config:
         try:
             data = json.loads(path.read_text(encoding="utf-8-sig"))
             phrases = data.get("banned_phrases", self.banned_phrases)
-            if data.get("persona_id") != persona_id or not phrases_ok(phrases):
+            keep_apology = data.get("keep_apology", False)
+            if (
+                data.get("persona_id") != persona_id
+                or not phrases_ok(phrases)
+                or not isinstance(keep_apology, bool)
+            ):
                 raise ValueError("invalid persona rules")
-            rules = {"banned_phrases": list(phrases), "source": path.name}
+            rules = {"banned_phrases": list(phrases), "keep_apology": keep_apology, "source": path.name}
         except (OSError, ValueError, AttributeError):
             rules = dict(default, error=path.name)
         self._persona_rules[persona_id] = (stamp, rules)
