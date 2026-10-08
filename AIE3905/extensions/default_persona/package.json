@@ -1,0 +1,6 @@
+{
+  "persona_id": "work_assistant_v02",
+  "custom_error_message": "暂时无法回复，请重新 @ 我。",
+  "tools": null,
+  "skills": null
+}
