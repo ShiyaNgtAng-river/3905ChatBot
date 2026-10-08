@@ -1,0 +1,6 @@
+name: astrbot_plugin_sike_adapter
+display_name: 伺客 HTTP 适配器
+desc: 数字员工 IM 协议（伺客坐席，企业微信）的平台适配器：HTTP 收单，回调回复
+version: v0.1.0
+author: AIE3905 Project Team
+astrbot_version: '>=4.28.1'
