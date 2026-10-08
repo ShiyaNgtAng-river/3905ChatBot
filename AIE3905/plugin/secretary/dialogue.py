@@ -145,7 +145,8 @@ def _join_paragraph(m):
 
 
 def banned_in(text, phrases):
-    """The banned phrases (dialogue.banned_phrases) that a reply uses."""
+    """The banned phrases a reply uses outside 「」 (quoted original words)."""
+    text = re.sub(r"「[^「」]*」", "", text)
     return [p for p in phrases if p and p in text]
 
 
@@ -1188,6 +1189,7 @@ class Dialogue:
                                 "prompt_version": "native-1.2",
                                 "style_flags": s["style_flags"],
                                 "avoid_phrases": s.get("avoid", []),
+                                "persona_id": s.get("persona_id", ""),
                                 "draft_ids": [d["id"] for d in s["drafts"]],
                                 "operations": s["operations"],
                             }
@@ -1217,6 +1219,7 @@ class Dialogue:
                             "prompt_version": "native-1.2",
                             "style_flags": s["style_flags"],
                             "avoid_phrases": s.get("avoid", []),
+                            "persona_id": s.get("persona_id", ""),
                             "draft_ids": [d["id"] for d in s["drafts"]],
                             "operations": s["operations"],
                         }

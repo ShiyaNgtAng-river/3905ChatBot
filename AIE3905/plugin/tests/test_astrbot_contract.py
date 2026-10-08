@@ -4,6 +4,7 @@ import asyncio
 import importlib.util
 import json
 import logging
+import os
 import sys
 import tempfile
 import types
@@ -58,6 +59,9 @@ class Event:
 
     def get_platform_id(self):
         return "lark1"
+
+    def get_platform_name(self):
+        return "lark"
 
     def get_group_id(self):
         return self.group
@@ -567,6 +571,57 @@ class NativeFrontendTests(PluginHarness):
         spoken = await self.mention("在吗", "bare2")
         self.assertFalse(hasattr(spoken, "message_str"))
         self.assertIn("我这边", self.plugin.engine.config.banned_phrases)
+
+    async def test_each_persona_brings_its_own_banned_phrases(self):
+        calls, answers, selected = [], [], {"id": "work_v1"}
+
+        async def llm_generate(**kw):
+            calls.append(kw)
+            return types.SimpleNamespace(completion_text=answers.pop(0))
+
+        async def resolve_selected_persona(**kw):
+            return selected["id"], None, None, False
+
+        self.plugin.context.llm_generate = llm_generate
+        self.plugin.context.persona_manager = types.SimpleNamespace(
+            resolve_selected_persona=resolve_selected_persona
+        )
+        self.plugin.engine.config.fast_provider = "fast-model"
+        rules = self.plugin.engine.config.persona_rules_dir
+        rules.mkdir()
+        (rules / "work_v1.json").write_text(
+            json.dumps({"persona_id": "work_v1", "banned_phrases": ["好问题", "呢"]}, ensure_ascii=False)
+        )
+
+        async def turn(text, mid):
+            ev = await self.mention(text, mid)
+            await self.plugin.inject_group_context(ev, Request(["search_group_history"]))
+            return ev, ev.get_extra("groupsecretary_turn")
+
+        ev, state = await turn("报销截止是哪天", "p1")
+        self.assertEqual((state["persona_id"], state["banned_phrases"]), ("work_v1", ["好问题", "呢"]))
+        answers.append("截止日期待确认。")
+        resp = types.SimpleNamespace(completion_text="好问题，截止日期待确认呢。")
+        await self.plugin.retry_empty_answer(ev, resp)
+        self.assertEqual(resp.completion_text, "截止日期待确认。")
+        # Quoted original words do not count, and this persona's list has no 接住.
+        quoted = types.SimpleNamespace(completion_text="群里只说了「月底前交呢」。这件事我接住了。")
+        await self.plugin.retry_empty_answer(ev, quoted)
+        self.assertEqual(len(calls), 1)
+        # Without a rules file, or with a broken one, the global list applies.
+        default = self.plugin.engine.config.banned_phrases
+        selected["id"] = "anon"
+        self.assertEqual((await turn("在吗", "p2"))[1]["banned_phrases"], default)
+        (rules / "broken.json").write_text("{")
+        selected["id"] = "broken"
+        self.assertEqual((await turn("在吗", "p3"))[1]["banned_phrases"], default)
+        selected["id"] = "../work_v1"
+        self.assertEqual((await turn("在吗", "p4"))[1]["banned_phrases"], default)
+        # An edited rules file is read again on the next turn.
+        (rules / "work_v1.json").write_text(json.dumps({"persona_id": "work_v1", "banned_phrases": ["啦"]}))
+        os.utime(rules / "work_v1.json", ns=(1, 1))
+        selected["id"] = "work_v1"
+        self.assertEqual((await turn("在吗", "p5"))[1]["banned_phrases"], ["啦"])
 
     async def test_banned_phrase_is_reworded_and_never_sent(self):
         calls, answers = [], []
