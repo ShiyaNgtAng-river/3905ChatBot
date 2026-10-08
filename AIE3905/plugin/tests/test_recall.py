@@ -236,6 +236,19 @@ class RecallTests(unittest.IsolatedAsyncioTestCase):
         bad = json.loads(self.e.conversation.native_tool(s, "search_history", {}))
         self.assertIn("error", bad)
 
+    async def test_tool_budget_is_configurable_and_unchecked_is_not_absent(self):
+        await self.chat()
+        self.e.config.tool_budget = 3
+        s = self.state("帮我核对三件事")
+        for _ in range(3):
+            self.assertNotIn("error", json.loads(
+                self.e.conversation.native_tool(s, "search_history", {"query": "爬山"})))
+        spent = json.loads(self.e.conversation.native_tool(s, "search_history", {"query": "周日"}))
+        # Spent budget: say the item was not checked, never that the record lacks it.
+        self.assertIn("没能核对", spent["error"])
+        self.assertNotIn("直接回答", spent["error"])
+        self.assertEqual(Config(demo_config(), ".").tool_budget, 32)
+
     async def test_recent_chat_names_the_quoted_message_and_relative_day(self):
         asked = await self.say("yu", "小余", "明天能不能提前刷个2背包开", -60 * 24)
         self.n += 1
