@@ -269,6 +269,11 @@ class RecallTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tidy_reply(text, flags), "行啦行啦，我这不是在吗～到底啥事让你气成这样？")
         self.assertIn("blank_line", flags)
         self.assertEqual(tidy_reply("先说结论\n\n然后再看"), "先说结论，然后再看")
+        # Live demo 2026-10-08: "仓库：" then a quoted draft became "仓库：，「".
+        self.assertEqual(
+            tidy_reply("整理好了，您直接转给仓库：\n\n「王师傅这单：刹车片明早到。」"),
+            "整理好了，您直接转给仓库：「王师傅这单：刹车片明早到。」",
+        )
         numbered = "最要紧的一点是缓存。\n\n1. 先清缓存\n\n2. 再重启"
         self.assertEqual(tidy_reply(numbered), numbered)  # a numbered answer keeps its layout
 

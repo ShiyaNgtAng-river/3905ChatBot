@@ -136,10 +136,10 @@ _EDGE = set("了的是着过吗呢吧啊呀啦嘛哦和就也都还又")
 
 
 def _join_paragraph(m):
-    """What replaces a paragraph break: nothing after closing punctuation or an emoji,
-    else a comma."""
+    """What replaces a paragraph break: nothing after punctuation or an emoji, else a
+    comma. A colon introduces what follows, so "仓库：" + 「…」 stays "仓库：「…」"."""
     prev = m.string[: m.start()].rstrip()[-1:]
-    if not prev or prev in "。！？!?～~…）)」』】" or ord(prev) >= 0x1F000 or 0x2600 <= ord(prev) <= 0x27BF:
+    if not prev or prev in "。！？!?～~…）)」』】：:，,；;、" or ord(prev) >= 0x1F000 or 0x2600 <= ord(prev) <= 0x27BF:
         return ""
     return "，"
 
