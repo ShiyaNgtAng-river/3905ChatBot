@@ -1,0 +1,6 @@
+{
+  "ocr": {"backend": "apple_vision"},
+  "describe": {"backend": "disabled", "base_url": "", "model": "", "api_key_env": "GROUPMEDIA_VISION_KEY"},
+  "transcribe": {"backend": "faster_whisper", "model_path": "/absolute/path/to/faster-whisper-base", "language": "zh"},
+  "generate": {"backend": "disabled", "base_url": "", "model": "", "api_key_env": "GROUPMEDIA_IMAGE_KEY"}
+}

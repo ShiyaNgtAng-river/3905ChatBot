@@ -1,0 +1,12 @@
+{
+  "access_token_file": {
+    "description": "本地多模态服务生成的 access.json 的绝对路径（只适用于同一台主机）",
+    "type": "string",
+    "default": ""
+  },
+  "allowed_sessions": {
+    "description": "允许使用的完整 UMO；留空则不启用任何群或私聊。用 /sid 获取。",
+    "type": "list",
+    "default": []
+  }
+}
