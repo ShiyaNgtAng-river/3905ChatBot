@@ -42,6 +42,8 @@ NATIVE_GUIDE = """先按人设里“先听懂”的方式读当前发言人：�
 记忆里存的都是“谁在什么时候说了什么”，结论要你自己判断：按时间看最新的相关说法，看说话人是不是能拍板的人；玩笑、假设、传闻、提问、转发的旧内容不算结论；两个叫法是不是同一件事、说法有没有冲突，看原文依据；拿不准就把几种可能和各自的依据都说出来。
 一次要核对好几件事时，把要查的点都写进同一个 transfer_to_memory 任务，不要拆成很多个同时交出去；一轮能查记录的次数有上限。查记录的次数用完、还有没核对到的内容时，明说这几项这次没能核对，不要说记录里没有。
 转述别人的答复时，只说对方明确答应了什么；对方只回应了请求的一部分，不要说成全部同意。
+群里常有几件事同时在聊。“收到”“好的”“已出库”“要原厂的”“拿一个……”这类没说对象的短句，只有能确定是在回哪条时才当依据，拿不准就不提。这条只管没说对象的短句：说清了对象的消息（带车牌、单号、件名或人名）照常当依据，直接回答；比如有人说“3H6T9 散热器装好了”，就答是他报的装好了，不要因为原话没写“我装的”就说待确认。查记录的结果里，answers 是这条在接谁的话；followups 是之后的消息，括号里写了来由，标“未必在回这条”的只能当线索。
+回答只说问到的事。要顺带补充别的细节，必须有原话明确说的是同一件事、同一个对象（同一辆车、同一单、同一个人）；做不到就不补。
 问“最近聊了什么”“某段时间发生了什么”用 get_group_episodes；问某件事是怎么定的、后来有没有改，用 get_topic_timeline；摘要和搜索都找不到的细节，知道是哪天时用 read_group_day 重读那天的记录；问某个成员是谁、负责什么用 get_member_profile。
 正式事项的现状用 read_group_items 查。
 给出可以被采用的安排时用 save_group_drafts 保存，它只是建议；改方案时 parent_id 填原草案 id。
@@ -914,6 +916,9 @@ class Dialogue:
             day = {0: "（今天）", 1: "（昨天）"}.get((today - local.date()).days, "")
             return f"{local:%Y-%m-%d}{day} {local:%H:%M}"
 
+        def week(d):
+            return "周" + "一二三四五六日"[d.weekday()]
+
         def one_line(text, n):
             text = " ".join(str(text).split())
             return text if len(text) <= n else text[:n] + "…"
@@ -961,7 +966,11 @@ class Dialogue:
             "</group_chat>",
             f"当前发言人：{sender_name or m.get('name') or '群成员'}"
             + ("（可以正式确认事项）" if g.can_confirm(s["actor"].user, "") else "")
-            + f"；时间 {clock(m['at'])}（{g.timezone}）。",
+            + f"；时间 {clock(m['at'])} {week(today)}（{g.timezone}）。",
+            # "周一""前天" were resolved to wrong dates (2026-10-09 test); give the days.
+            "最近 7 天：" + "、".join(
+                f"{d:%m-%d} {week(d)}" for d in (today - timedelta(days=k) for k in range(6, -1, -1))
+            ) + "。",
         ]
         # What memory knows about this speaker; opted-out members have none. With
         # whole-day reading the portrait in <group_memory> carries it, dated.

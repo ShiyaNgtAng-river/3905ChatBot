@@ -210,11 +210,83 @@ class RecallTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(texts), {"周末团建去爬山吧", "那就周日早上九点"})
         hit = self.e.recall.search(s, query="大巴")["messages"][0]
         self.assertEqual(hit["name"], "老张")
-        self.assertIn("那就周日早上九点", " ".join(hit["context"]))
+        # Plain neighbours are not shown: in a busy group they are other conversations.
+        self.assertNotIn("context", hit)
         self.assertIn(hit["uid"], s["sources"])
         none = self.e.recall.search(s, query="大巴", who="不存在的人", when="那天")
         self.assertEqual(none["messages"], [])
         self.assertEqual(len(none["notes"]), 3)
+
+    async def test_search_shows_the_answer_that_came_later(self):
+        # 2026-10-09 test: the reply "3000就行" never repeats "定金" and was missed.
+        await self.say("lin", "小林", "M2X8E 两个气囊要调货，得先付定金", 0)
+        await self.say("owner", "老张", "定金走月结行不行？", 5)
+        for i, text in enumerate(["收到", "好的", "外面下雨了"]):
+            await self.say("yu", "小余", text, 6 + i)
+        await self.say("lin", "小林", "这单得先付，3000就行，其余月结", 10)
+        await self.say("lin", "小林", "下午统一发货", 70)
+        found = self.e.recall.search(self.state(), query="定金")["messages"]
+        ask = next(x for x in found if x["text"] == "定金走月结行不行？")
+        self.assertIn("3000就行", " ".join(ask.get("followups", [])))
+        later = " ".join(" ".join(x.get("followups", [])) for x in found)
+        self.assertNotIn("下午统一发货", later)  # more than an hour later
+        self.assertNotIn("外面下雨了", later)  # not one of the people in the hits
+
+    async def test_search_follows_a_code_to_messages_without_the_name(self):
+        # "3H6T9 散热器装好了" names the plate, not the car model.
+        await self.say("jie", "阿杰", "飞度 粤B·3H6T9 水箱漏了，要个散热器", 0)
+        await self.say("lin", "小林", "飞度散热器 品牌380", 2)
+        await self.say("he", "小何", "飞度散热器送到了", 30)
+        await self.say("jie", "阿杰", "3H6T9 散热器装好了，防冻液也加了", 60)
+        result = self.e.recall.search(self.state(), query="飞度 安装")
+        self.assertIn("3H6T9 散热器装好了，防冻液也加了", [x["text"] for x in result["messages"]])
+        self.assertTrue(any("3H6T9" in n for n in result["notes"]))
+        plain = self.e.recall.search(self.state(), query="3H6T9")
+        self.assertFalse(any("编号" in n for n in plain["notes"]))  # asked by code already
+        # An earlier question to the bot sharing the words gives no code and comes last.
+        self.state("DF5J2 大灯是谁安装的？")
+        again = self.e.recall.search(self.state(), query="飞度 安装")
+        self.assertFalse(any("DF5J2" in n for n in again["notes"]))
+        order = [x["text"] for x in again["messages"]]
+        asked = next(i for i, x in enumerate(again["messages"]) if x.get("asked_bot"))
+        self.assertLess(order.index("飞度 粤B·3H6T9 水箱漏了，要个散热器"), asked)
+        self.assertIn("3H6T9 散热器装好了，防冻液也加了", order)
+
+    async def test_search_keeps_interleaved_exchanges_apart(self):
+        # 2026-10-09 rerun: 小吴's "要原厂的" answered her own question about spark
+        # plugs, but was shown after the wiper quote and pinned on it.
+        await self.say("jie", "阿杰", "哈弗H6 雨刮有货吗", 0)
+        await self.say("wu", "小吴", "思域的火花塞有没有？", 1)
+        await self.say("lin", "小林", "思域火花塞 有，NGK45一支，原厂80", 3)
+        await self.say("lin", "小林", "有的，哈弗H6雨刮博世的55，原厂要110", 5)
+        await self.say("wu", "小吴", "要原厂的", 6)
+        await self.say("he", "小何", "已出库", 7)
+        await self.say("jie", "阿杰", "给我来两对", 8)
+        await self.say("lin", "小林", "哈弗H6水泵 GMB480一个", 9)
+        result = self.e.recall.search(self.state(), query="哈弗H6 雨刮")
+        quote = next(x for x in result["messages"] if x["text"].startswith("有的，哈弗H6雨刮"))
+        self.assertIn("哈弗H6 雨刮有货吗", quote["answers"])
+        after = " ".join(quote.get("followups", []))
+        self.assertIn("给我来两对（对方之后的话，未必在回这条）", after)
+        self.assertNotIn("要原厂的", after)
+        self.assertNotIn("已出库", after)
+        # A brand and price is not a plate.
+        self.assertFalse(any("GMB480" in n for n in result["notes"]))
+
+    async def test_search_reads_chinese_numerals_in_dates(self):
+        await self.say("lin", "小林", "8月12号那笔是 粤B·6R9A1 的两个雾灯", 0)
+        found = self.e.recall.search(self.state(), query="八月十二号")["messages"]
+        self.assertEqual([x["text"] for x in found], ["8月12号那笔是 粤B·6R9A1 的两个雾灯"])
+
+    async def test_prompt_lists_the_last_seven_days(self):
+        await self.chat()
+        s = self.state("周一那台车")
+        prompt = self.e.conversation.native_prompt(s, "老张")
+        today = datetime.now(timezone(timedelta(hours=8)))
+        week = "周" + "一二三四五六日"[today.weekday()]
+        self.assertIn(f"{today:%m-%d} {week}。", prompt)
+        monday = today - timedelta(days=today.weekday())
+        self.assertIn(f"{monday:%m-%d} 周一", prompt)
 
     async def test_tools_and_prompt_expose_episodes_after_they_scroll_away(self):
         await self.chat()
