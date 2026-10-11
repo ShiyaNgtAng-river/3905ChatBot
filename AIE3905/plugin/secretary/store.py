@@ -63,6 +63,11 @@ class Store:
             r["name"] for r in self.conn.execute("PRAGMA table_info(answers)")
         }:
             self.conn.execute("ALTER TABLE answers ADD COLUMN trace TEXT DEFAULT '{}'")
+        if "message_uid" not in {
+            r["name"] for r in self.conn.execute("PRAGMA table_info(answers)")
+        }:
+            # The question a reply answers; '' for replies stored before the link.
+            self.conn.execute("ALTER TABLE answers ADD COLUMN message_uid TEXT DEFAULT ''")
         # Additive migrations preserve historical messages and their processing status.
         if "route" not in {
             r["name"] for r in self.conn.execute("PRAGMA table_info(messages)")
@@ -289,6 +294,25 @@ class Store:
             (group, uid_or_native, uid_or_native),
         )
 
+    def answer_to(self, group, m):
+        """The bot's reply to a stored question, or None.
+
+        Replies stored before the link existed are matched by asker, text and a
+        reply within 30 minutes.
+        """
+        row = self.one(
+            "SELECT at,output FROM answers WHERE group_key=? AND message_uid=? ORDER BY at LIMIT 1",
+            (group, m["uid"]),
+        )
+        if row:
+            return row
+        until = (datetime.fromisoformat(m["at"]) + timedelta(minutes=30)).isoformat()
+        return self.one(
+            """SELECT at,output FROM answers WHERE group_key=? AND message_uid='' AND actor=?
+            AND question=? AND at>=? AND at<=? ORDER BY at LIMIT 1""",
+            (group, m["sender"], m["text"], m["at"], until),
+        )
+
     def recent(self, group, before=None, limit=30):
         where, args = "group_key=? AND erased=0 AND kind!='recall'", [group]
         if before:
@@ -495,7 +519,7 @@ class Store:
 
     def _purge(self, db, group, ids, actor, action, freeze_native=True):
         ids = set(ids)
-        seqs = set()
+        seqs, stamps = set(), []
         for uid in ids:
             m = self.one(
                 "SELECT * FROM messages WHERE group_key=? AND uid=?", (group, uid)
@@ -503,6 +527,7 @@ class Store:
             if not m:
                 continue
             seqs.add(m["seq"])
+            stamps.append(datetime.fromisoformat(m["at"]))
             for token in ["uid:" + uid, "fp:" + m["fingerprint"]] + (
                 ["native:" + digest(m["native_id"])]
                 if m["native_id"] and freeze_native
@@ -554,9 +579,18 @@ class Store:
                     db.execute("DELETE FROM answers WHERE id=?", (a["id"],))
                     db.execute("DELETE FROM feedback WHERE answer_id=?", (a["id"],))
         else:
-            # Remove generated text conservatively: it may paraphrase removed evidence.
-            db.execute("DELETE FROM answers WHERE group_key=?", (group,))
-            db.execute("DELETE FROM feedback WHERE group_key=?", (group,))
+            # A reply may paraphrase removed evidence, directly, through memory or through
+            # an earlier reply, so every reply that could have seen it goes: those made
+            # after the earliest removed message. Older replies stay (2026-10-10: one
+            # recalled quote wiped every answer, and questions put to the bot read as
+            # unanswered again). Feedback written since then goes too.
+            first = min(stamps, default=None)
+            for table in ("answers", "feedback"):
+                for r in self.rows(f"SELECT id,at FROM {table} WHERE group_key=?", (group,)):
+                    if first is None or datetime.fromisoformat(r["at"]) >= first:
+                        db.execute(f"DELETE FROM {table} WHERE id=?", (r["id"],))
+                        if table == "answers":
+                            db.execute("DELETE FROM feedback WHERE answer_id=?", (r["id"],))
         db.execute("DELETE FROM drafts WHERE group_key=?", (group,))
         db.execute("DELETE FROM dialogue_runs WHERE group_key=?", (group,))
         db.execute(

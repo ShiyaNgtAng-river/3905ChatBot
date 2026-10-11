@@ -157,7 +157,7 @@ class Recall:
         )
         rows = self.store.rows(
             """SELECT * FROM messages WHERE group_key=? AND seq>? AND erased=0
-            AND kind!='recall' AND text!='' ORDER BY seq LIMIT ?""",
+            AND kind!='recall' AND text!='' AND route!='dialogue' ORDER BY seq LIMIT ?""",
             (key, last, cfg.episode_size),
         )
         if len(rows) >= cfg.episode_size:
@@ -499,6 +499,9 @@ class Recall:
         hits = {r["uid"] for r in shown}
         found = []
         for r in shown:
+            # A question to the bot without its answer reads as still open
+            # (2026-10-10: "还没定论" four times for questions answered days before).
+            reply = self.store.answer_to(key, r) if r.get("route") == "dialogue" else None
             around = (
                 self.store.rows(
                     """SELECT * FROM messages WHERE group_key=? AND erased=0 AND kind!='recall'
@@ -521,6 +524,7 @@ class Recall:
                     "at": clock(r["at"]),
                     "name": r["name"] or "群成员",
                     "text": r["text"][:400],
+                    **({"bot_reply": f"[{clock(reply['at'])} 助手] {reply['output'][:300]}"} if reply else {}),
                     **({"context": [line(x, 120) for x in around]} if around else {}),
                     **({"answers": line(answered, 200)} if answered else {}),
                     **({"followups": [f"{line(x, 200)}（{why}）" for x, why in after]} if after else {}),
