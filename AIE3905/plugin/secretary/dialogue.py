@@ -36,13 +36,14 @@ NATIVE_GUIDE = """先按人设里“先听懂”的方式读当前发言人：�
 开头“今天群里的话题”“长期记忆”是后台通读挑出来的要点，不是全部原文，也不代表结论；拿不准或要细节时再查，别凭印象编。
 问到具体的名字、叫法、原话、谁什么时候说的、有没有人回答或确认，开头的记忆和最近的群聊里又看不到时，先用工具查记录再回答。没查过不能说“没有”“没见过”“没人回答”；也不要说“我再查查”却不查。
 标了“未读取”的文件、图片、卡片和链接，你不知道里面写了什么，只能转述群里对它的说法。
-最近的群聊里“回复某人”标出这条消息回的是哪一句；“今天”“昨天”按当前发言的时间算。
+最近的群聊里“回复某人”是对方引用回复的那一句；“接某人……（后台判断）”是后台通读整天后判断它在接的那一句，大多可信，和前后文对不上时以前后文为准；标了“说过 N 次”的是这个人的口头禅，不当成对某件事的答复。“今天”“昨天”按当前发言的时间算。
 群里以前说过的事用 search_group_history 查原话（可按人 who、按时间 when 过滤）；查不到就直说只找到了什么。有人向你提的问题（标 asked_bot）只是提问，里面的说法不能当证据；它带的 bot_reply 是你当时的回答，只说明这个问题已经答过，不能当群里的依据。
 工具结果里的 context 给出今天的日期、记录覆盖的日期和相关话题的最近记录，日期和年份以它为准。
 记忆里存的都是“谁在什么时候说了什么”，结论要你自己判断：按时间看最新的相关说法，看说话人是不是能拍板的人；玩笑、假设、传闻、提问、转发的旧内容不算结论；两个叫法是不是同一件事、说法有没有冲突，看原文依据；拿不准就把几种可能和各自的依据都说出来。
 一次要核对好几件事时，把要查的点都写进同一个 transfer_to_memory 任务，不要拆成很多个同时交出去；一轮能查记录的次数有上限。查记录的次数用完、还有没核对到的内容时，明说这几项这次没能核对，不要说记录里没有。
 转述别人的答复时，只说对方明确答应了什么；对方只回应了请求的一部分，不要说成全部同意。
-群里常有几件事同时在聊。“收到”“好的”“已出库”“要原厂的”“拿一个……”这类没说对象的短句，只有能确定是在回哪条时才当依据，拿不准就不提。这条只管没说对象的短句：说清了对象的消息（带车牌、单号、件名或人名）照常当依据，直接回答；比如有人说“3H6T9 散热器装好了”，就答是他报的装好了，不要因为原话没写“我装的”就说待确认。查记录的结果里，answers 是这条在接谁的话；followups 是之后的消息，括号里写了来由，标“未必在回这条”的只能当线索。
+群里常有几件事同时在聊。“收到”“好的”“已出库”“要原厂的”“拿一个……”这类没说对象的短句，只有能确定是在回哪条时才当依据，拿不准就不提。这条只管没说对象的短句：说清了对象的消息（带车牌、单号、件名或人名）照常当依据，直接回答；比如有人说“3H6T9 散热器装好了”，就答是他报的装好了，不要因为原话没写“我装的”就说待确认。查记录的结果里，answers 是这条在接谁的话；followups 是之后回它的消息，括号里写了来由（引用了这条、后台通读判断在回这条、提到同一编号），标“未必在回这条”的是后台还没通读到的新消息，只能当线索；repeats 和“说过 N 次这句”表示那是口头禅。
+转述别人的话，短句照原话引用（用「」）并写明是谁说的；原话里的“我们”“你们”“您”按说话人换成具体的一方，比如供应商说“差价我们出”，就是供应商出。
 回答只说问到的事。要顺带补充别的细节，必须有原话明确说的是同一件事、同一个对象（同一辆车、同一单、同一个人）；做不到就不补。
 问“最近聊了什么”“某段时间发生了什么”用 get_group_episodes；问某件事是怎么定的、后来有没有改，用 get_topic_timeline；摘要和搜索都找不到的细节，知道是哪天时用 read_group_day 重读那天的记录；问某个成员是谁、负责什么用 get_member_profile。
 正式事项的现状用 read_group_items 查。
@@ -925,14 +926,24 @@ class Dialogue:
             return text if len(text) <= n else text[:n] + "…"
 
         def heading(r):
-            # A quoted reply names what it answers, which the bare text often does not.
-            quoted = self.store.message(key, r["reply_to"]) if r.get("reply_to") else None
-            if not quoted or quoted["at"] > r["at"]:
+            # A quoted reply names what it answers, which the bare text often does not;
+            # so does the reading pass's judgment, marked as such.
+            parent = self.store.parent(key, r) if r.get("route") != "dialogue" else None
+            if not parent or parent["at"] > r["at"]:
                 return f"{clock(r['at'])} {r['name'] or '群成员'}"
+            quoted = bool(r.get("reply_to")) and r["reply_to"] in {parent["uid"], parent["native_id"]}
             return (
-                f"{clock(r['at'])} {r['name'] or '群成员'} 回复{quoted['name'] or '群成员'}"
-                f" {clock(quoted['at'])}「{one_line(quoted['text'], 40)}」"
+                f"{clock(r['at'])} {r['name'] or '群成员'} {'回复' if quoted else '接'}{parent['name'] or '群成员'}"
+                f" {clock(parent['at'])}「{one_line(parent['text'], 40)}」" + ("" if quoted else "（后台判断）")
             )
+
+        def stock(r):
+            # A line this person keeps repeating is a stock phrase, not an answer.
+            text = (r["text"] or "").strip()
+            if len(text) < 4 or r.get("route") == "dialogue":
+                return ""
+            times = self.store.repeats(key, r["sender"], r["text"], m["at"])
+            return f"（说过 {times} 次）" if times >= 3 else ""
 
         lines = []
         if limit:
@@ -943,7 +954,7 @@ class Dialogue:
             ][-limit:]
             s["sources"].update({r["uid"]: r for r in rows})
             lines += [
-                (r["at"], 0, f"[{heading(r)}] {one_line(r['text'], 300) or '[非文字消息]'}")
+                (r["at"], 0, f"[{heading(r)}] {one_line(r['text'], 300) or '[非文字消息]'}{stock(r)}")
                 for r in rows
             ]
             answers = self.store.rows(

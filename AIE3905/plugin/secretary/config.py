@@ -93,6 +93,8 @@ class Config:
         self.read_min_minutes = memory.get("read_min_minutes", 10)
         self.read_max_chars = memory.get("read_max_chars", 250000)
         self.consolidate_time = memory.get("consolidate_time", "04:00")
+        # After each reading pass, mark which earlier message each new reply answers.
+        self.link_replies = memory.get("link_replies", True)
         self.long_timeout = memory.get("timeout_seconds", 180)
         # End-of-day consolidation may run on a reasoning model: allow it longer.
         self.consolidate_timeout = memory.get("consolidate_timeout_seconds", 420)
@@ -124,6 +126,7 @@ class Config:
         if (
             not isinstance(self.reading, bool)
             or not isinstance(self.gate, bool)
+            or not isinstance(self.link_replies, bool)
             or any(
                 not isinstance(n, (int, float)) or isinstance(n, bool) or n <= 0
                 for n in numbers

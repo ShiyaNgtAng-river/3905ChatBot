@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from secretary.config import Config
 from secretary.engine import Engine
@@ -267,11 +268,50 @@ class RecallTests(unittest.IsolatedAsyncioTestCase):
         quote = next(x for x in result["messages"] if x["text"].startswith("有的，哈弗H6雨刮"))
         self.assertIn("哈弗H6 雨刮有货吗", quote["answers"])
         after = " ".join(quote.get("followups", []))
-        self.assertIn("给我来两对（对方之后的话，未必在回这条）", after)
+        self.assertIn("给我来两对（对方之后的话，后台还没通读到，未必在回这条）", after)
         self.assertNotIn("要原厂的", after)
         self.assertNotIn("已出库", after)
         # A brand and price is not a plate.
         self.assertFalse(any("GMB480" in n for n in result["notes"]))
+
+    async def test_search_and_chat_use_the_reading_pass_links(self):
+        ask = await self.say("jie", "阿杰", "哈弗H6 雨刮有货吗", 0)
+        await self.say("wu", "小吴", "思域的火花塞有没有？", 1)
+        quote = await self.say("lin", "小林", "有的，哈弗H6雨刮博世的55，原厂要110", 5)
+        await self.say("jie", "阿杰", "先看看别的", 6)  # judged: not a reply to the quote
+        take = await self.say("jie", "阿杰", "给我来两对", 8)
+        for i in range(3):
+            last = await self.say("zhou", "周厂长", "车主那边我去沟通", 10 + i)
+        seq = {m.native_id: self.e.store.message("demo", m.native_id)["seq"] for m in (ask, quote, take, last)}
+        tz = ZoneInfo("Asia/Shanghai")
+        days = {datetime.fromisoformat(m.at).astimezone(tz).date().isoformat() for m in (ask, last)}
+        with self.e.store.tx() as db:
+            db.executemany(
+                "INSERT INTO links(group_key,seq,target,day) VALUES('demo',?,?,?)",
+                [(seq[quote.native_id], seq[ask.native_id], ""), (seq[take.native_id], seq[quote.native_id], "")],
+            )
+            for day in days:
+                db.execute("INSERT OR REPLACE INTO metadata VALUES(?,?)", (f"linked:demo:{day}", str(seq[last.native_id])))
+        s = self.state()
+        result = self.e.recall.search(s, query="哈弗H6 雨刮")
+        hit = next(x for x in result["messages"] if x["text"].startswith("有的，哈弗H6雨刮"))
+        self.assertIn("哈弗H6 雨刮有货吗", hit["answers"])
+        after = " ".join(hit.get("followups", []))
+        self.assertIn("给我来两对（后台通读判断在回这条）", after)
+        self.assertNotIn("先看看别的", after)
+        # One level up as well: the quote, then the question it answers.
+        reply = self.e.recall.search(s, query="两对")["messages"][0]
+        self.assertIn("博世的55", reply["answers"])
+        self.assertIn("它又在接", reply["answers"])
+        self.assertIn("哈弗H6 雨刮有货吗", reply["answers"])
+        # The same words said again and again show once, marked as a stock phrase.
+        stock = self.e.recall.search(s, query="车主 沟通")["messages"]
+        self.assertEqual(len(stock), 1)
+        self.assertEqual(stock[0]["repeats"], "周厂长说过 3 次这句")
+        prompt = self.e.conversation.native_prompt(s, "老张")
+        self.assertIn("（后台判断）] 给我来两对", prompt)
+        self.assertIn("接小林", prompt)
+        self.assertIn("车主那边我去沟通（说过 3 次）", prompt)
 
     async def test_search_reads_chinese_numerals_in_dates(self):
         await self.say("lin", "小林", "8月12号那笔是 粤B·6R9A1 的两个雾灯", 0)

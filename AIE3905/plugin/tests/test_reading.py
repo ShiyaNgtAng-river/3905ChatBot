@@ -40,6 +40,7 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
             "read_new_chars": 30,
             "read_idle_minutes": 60,
             "read_min_minutes": 10,
+            "link_replies": False,  # turned on where tested
         }
         self.e = Engine(Config(cfg, self.temp.name))
         await self.e.start(maintenance=False)
@@ -134,6 +135,47 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         head = first.split("\n</聊天记录>")[0]
         self.assertTrue(second.startswith(head))
         self.assertIn("本轮新增的消息从 m3 开始", second)
+
+    async def test_link_pass_marks_what_each_reply_answers(self):
+        self.e.config.link_replies = True
+        ask = await self.say("jie", "阿杰", "哈弗H6 雨刮有货吗", at(5, 9))
+        other = await self.say("wu", "小吴", "思域的火花塞有没有？", at(5, 9, 1))
+        quote = await self.say("lin", "小林", "有的，哈弗H6雨刮博世的55，原厂要110", at(5, 9, 5))
+        pic = await self.say("lin", "小林", "[图片]", at(5, 9, 6))
+        okay = await self.say("jie", "阿杰", "好的好的", at(5, 9, 7))
+        take = await self.say("jie", "阿杰", "给我来两对", at(5, 9, 8))
+        quoted = await self.say("wu", "小吴", "要原厂的", at(5, 9, 9), reply_to="n2")
+        provider = self.model(
+            {"topics": []},
+            {"links": [
+                {"m": quote, "to": ask},
+                {"m": f"m{take}", "to": f"m{quote}"},
+                {"m": quoted, "to": other},  # quoted on the platform: kept as is
+                {"m": ask, "to": quote},  # points forward
+                {"m": 99999, "to": ask},  # not in the record
+                {"m": okay, "to": pic},  # a picture says nothing about who answers what
+            ]},
+        )
+        await self.r.read_pass("demo", "2026-10-05", at(5, 10))
+        self.assertEqual(provider.calls[1][2], "linking")
+        self.assertIn(f"从 m{ask} 起往后", provider.calls[1][1])
+        head = provider.calls[0][1].split("</聊天记录>")[0]
+        self.assertTrue(provider.calls[1][1].startswith(head))  # the cached prefix is shared
+        links = {r["seq"]: r["target"] for r in self.e.store.rows("SELECT seq,target FROM links")}
+        self.assertEqual(links, {quote: ask, take: quote})
+        # The next pass judges only messages after the last one judged.
+        later = await self.say("lin", "小林", "思域火花塞 NGK45一支", at(5, 10, 30))
+        provider = self.model({"topics": []}, {"links": []})
+        await self.r.read_pass("demo", "2026-10-05", at(5, 11))
+        self.assertIn(f"从 m{later} 起往后", provider.calls[1][1])
+        # A failed link pass keeps the view and is logged.
+        await self.say("jie", "阿杰", "收到", at(5, 11, 30))
+        self.model({"topics": []}, "不是 JSON", "还是不是")
+        self.assertEqual(await self.r.read_pass("demo", "2026-10-05", at(5, 12)), "2026-10-05")
+        self.assertTrue(self.e.store.one("SELECT 1 FROM usage WHERE role='linking_failure'"))
+        # A recalled message takes the links that touch it.
+        self.e.store.recall("demo", "n3")
+        self.assertEqual(self.e.store.rows("SELECT 1 FROM links"), [])
 
     async def test_view_keeps_only_supported_points_and_survives_bad_output(self):
         s = await self.first_day()

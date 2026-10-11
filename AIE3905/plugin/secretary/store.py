@@ -150,6 +150,15 @@ class Store:
         CREATE INDEX IF NOT EXISTS lesson_group ON lessons(group_key,about);
         PRAGMA user_version=5;
         """)
+        # v6: which earlier message a reply answers, as the reading pass judged it from
+        # the whole day; platform quotes stay in messages.reply_to.
+        self.conn.executescript("""
+        CREATE TABLE IF NOT EXISTS links(
+          group_key TEXT, seq INTEGER, target INTEGER, day TEXT, PRIMARY KEY(group_key,seq));
+        CREATE INDEX IF NOT EXISTS link_target ON links(group_key,target);
+        CREATE INDEX IF NOT EXISTS message_sender ON messages(group_key,sender);
+        PRAGMA user_version=6;
+        """)
         self.fts = True
         try:
             existing = self.one("SELECT 1 FROM sqlite_master WHERE name='message_fts'")
@@ -293,6 +302,42 @@ class Store:
            AND erased=0 AND kind!='recall' ORDER BY seq DESC LIMIT 1""",
             (group, uid_or_native, uid_or_native),
         )
+
+    def parent(self, group, m):
+        """The earlier message `m` answers: its platform quote, else the reading
+        pass's judgment, else None."""
+        if m.get("reply_to"):
+            quoted = self.message(group, m["reply_to"])
+            if quoted and quoted["at"] <= m["at"]:
+                return quoted
+        return self.one(
+            """SELECT m.* FROM links l JOIN messages m ON m.group_key=l.group_key AND m.seq=l.target
+            WHERE l.group_key=? AND l.seq=? AND m.erased=0 AND m.kind!='recall'""",
+            (group, m["seq"]),
+        )
+
+    def children(self, group, m, until):
+        """Later messages answering `m`, by platform quote or the reading pass, oldest first."""
+        rows = self.rows(
+            """SELECT m.* FROM links l JOIN messages m ON m.group_key=l.group_key AND m.seq=l.seq
+            WHERE l.group_key=? AND l.target=? AND m.erased=0 AND m.kind!='recall' AND m.at<=?""",
+            (group, m["seq"], until),
+        )
+        if m.get("native_id"):
+            rows += self.rows(
+                """SELECT * FROM messages WHERE group_key=? AND reply_to=? AND erased=0
+                AND kind!='recall' AND at<=? AND seq>?""",
+                (group, m["native_id"], until, m["seq"]),
+            )
+        return sorted({r["seq"]: r for r in rows}.values(), key=lambda r: r["seq"])
+
+    def repeats(self, group, sender, text, before):
+        """How many times this sender has said exactly this text up to `before`."""
+        return self.one(
+            """SELECT COUNT(*) AS n FROM messages WHERE group_key=? AND sender=? AND text=?
+            AND erased=0 AND kind!='recall' AND at<=?""",
+            (group, sender, text, before),
+        )["n"]
 
     def answer_to(self, group, m):
         """The bot's reply to a stored question, or None.
@@ -701,6 +746,14 @@ class Store:
                         f"DELETE FROM {table} WHERE group_key=? AND {key}=?",
                         (group, r[key]),
                     )
+        ordered = sorted(seqs)
+        for i in range(0, len(ordered), 400):
+            part = ordered[i : i + 400]
+            marks = ",".join("?" for _ in part)
+            db.execute(
+                f"DELETE FROM links WHERE group_key=? AND (seq IN ({marks}) OR target IN ({marks}))",
+                (group, *part, *part),
+            )
 
     def supersede_revision(self, group, native_id, new_uid):
         with self.tx() as db:
