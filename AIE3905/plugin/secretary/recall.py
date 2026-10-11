@@ -12,7 +12,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from .memory import rank
+from .memory import rank, terms
 from .providers import json_object
 from .store import encode
 from .types import digest, utcnow
@@ -27,6 +27,35 @@ PROFILE_PROMPT = """你负责维护群成员的简短印象卡，只写他们在
 输出 JSON：{"profiles":[{"sender":"原样填写 sender","summary":"不超过80字"}]}；没有可写的内容就省略该成员。"""
 
 _DIGITS = {c: i for i, c in enumerate("零一二三四五六七八九十", 0)}
+# A code switches between letters and digits at least twice: a plate tail (D3K71,
+# 3H6T9). Brand plus price (GMB480, TRW470) switches once and is not a code.
+_CODE = re.compile(r"[a-z0-9]{5,8}")
+# Who a hit answers is looked for this far back; that person's reply without the
+# keyword counts this long after the hit; later messages naming the same order count
+# this long after it. Each kind adds at most FOLLOW_MAX lines.
+PARTNER_HOURS, REPLY_MINUTES, TOPIC_HOURS, FOLLOW_MAX = 24, 60, 24, 2
+# Plain neighbours shown with each hit. In a busy group most of them are other
+# conversations (2026-10-09: 73% small talk), which the model then pins on the hit.
+NEIGHBOURS = 0
+PLACEHOLDERS = {"[图片]", "[语音]", "[非文字消息]"}
+_CN_NUM = re.compile(r"[零一二三四五六七八九十]{1,3}(?=[月号日点])")
+
+
+def is_code(token):
+    return bool(_CODE.fullmatch(token)) and sum(
+        a.isdigit() != b.isdigit() for a, b in zip(token, token[1:])
+    ) >= 2
+
+
+def codes(text):
+    """Plate-like codes in a message, lower-cased as the search index has them."""
+    return {t for t in terms(text) if is_code(t)}
+
+
+def with_digits(query):
+    """Also search 8 for 八 in 八月, 12 for 十二 in 十二号: dates are written both ways."""
+    extra = [str(n) for n in (_number(x) for x in _CN_NUM.findall(query)) if n is not None]
+    return " ".join([query, *extra]) if extra else query
 
 
 def _number(text):
@@ -309,8 +338,91 @@ class Recall:
             )
         return rows[:limit]
 
+    def _rare(self, key, tokens, cache):
+        """Tokens few of the group's messages share, weighted: 2 for codes and words in
+        at most 5 messages, 1 for words in at most 2% of them; common words are left out."""
+        if cache.get("limit") is None:
+            n = self.store.one(
+                "SELECT COUNT(*) AS n FROM messages WHERE group_key=? AND erased=0", (key,)
+            )["n"]
+            cache["limit"], cache["df"] = max(5, n // 50), {}
+        df, out = cache["df"], {}
+        for t in tokens:
+            if len(t) < 2:
+                continue
+            if t not in df:
+                df[t] = self.store.frequency(key, t)
+            if is_code(t) or df[t] <= 5:
+                out[t] = 2
+            elif df[t] <= cache["limit"]:
+                out[t] = 1
+        return out
+
+    def _exchange(self, key, r, m, cache, skip):
+        """The message a hit answers and what followed it in the same exchange.
+
+        The partner is the sender of the closest earlier message on the same thing (rare
+        words or a code in common), plus anyone the hit @-mentions. Later lines are a
+        reply quoting the hit or a partner's message within REPLY_MINUTES (answers often
+        drop the keyword: "3000就行", "哦对，那没问题"), and messages naming the same
+        order within TOPIC_HOURS. A short reply from someone else ("要原厂的") is left
+        out: in a busy group it usually answers a different question. So are a
+        partner's lines of three characters or less ("收到", "已出库") and a partner's
+        line naming another plate. Offline on the 2026-10-09 data this cut the lines
+        that can be pinned on the wrong order from 637 to 76 and kept all five
+        keyword-less answers.
+
+        Returns:
+            (earlier message or None, later (message, why) pairs oldest first).
+        """
+        mine = self._rare(key, terms(r["text"]), cache)
+        at = datetime.fromisoformat(r["at"])
+        answered, best = None, 0
+        if mine:
+            since = (at - timedelta(hours=PARTNER_HOURS)).isoformat()
+            for x in self.store.search(key, " ".join(mine), r["at"], 20, exclude_uid=r["uid"], since=since):
+                if x["seq"] >= r["seq"] or x["sender"] == r["sender"] or x.get("route") == "dialogue":
+                    continue
+                score = sum(mine[t] for t in terms(x["text"]) & mine.keys())
+                if score >= 2 and (score > best or (score == best and x["seq"] > answered["seq"])):
+                    answered, best = x, score
+        partners = {answered["sender"]} if answered else set()
+        for name in re.findall(r"@([^\s@，,：:]+)", r["text"]):
+            partners.update(self.senders(key, name))
+        partners.discard(r["sender"])
+        end = min((at + timedelta(hours=TOPIC_HOURS)).isoformat(), m["at"])
+        reply_end = (at + timedelta(minutes=REPLY_MINUTES)).isoformat()
+        replies, same = [], []
+        own = codes(r["text"]) | (codes(answered["text"]) if answered else set())
+        for x in self.store.rows(
+            """SELECT * FROM messages WHERE group_key=? AND erased=0 AND kind!='recall'
+            AND seq>? AND at<=? AND uid!=? ORDER BY seq LIMIT 300""",
+            (key, r["seq"], end, m["uid"]),
+        ):
+            text = (x["text"] or "").strip()
+            if x["uid"] in skip or x.get("route") == "dialogue" or not text or text in PLACEHOLDERS:
+                continue
+            quoted = r.get("native_id") and x.get("reply_to") == r["native_id"]
+            reply = x["sender"] in partners and x["at"] <= reply_end and len(text) > 3
+            if quoted or (reply and not codes(text) - own):
+                if len(replies) < FOLLOW_MAX:
+                    replies.append((x, "引用了这条" if quoted else "对方之后的话，未必在回这条"))
+            else:
+                shared = terms(text) & mine.keys()
+                if any(is_code(t) for t in shared):
+                    why = "提到同一编号"
+                elif sum(mine[t] for t in shared) >= 4:
+                    why = "说的可能是同一件事"
+                else:
+                    continue
+                if len(same) < FOLLOW_MAX:
+                    same.append((x, why))
+            if len(replies) >= FOLLOW_MAX and len(same) >= FOLLOW_MAX:
+                break
+        return answered, sorted(replies + same, key=lambda p: p[0]["seq"])
+
     def search(self, s, query="", who="", when="", messages=True):
-        """Recall for one dialogue turn: messages with context, plus episodes.
+        """Recall for one dialogue turn: messages with their exchange, plus episodes.
 
         Args:
             s: Dialogue state; only this group's rows before the request are used.
@@ -320,7 +432,8 @@ class Recall:
             messages: False returns only episode summaries.
 
         Returns:
-            Dict with matching messages (each with neighbours), episodes and notes.
+            Dict with matching messages (each with the message it answers and what
+            followed in the same exchange), episodes and notes.
         """
         key, m, g = s["key"], s["m"], s["g"]
         tz = ZoneInfo(g.timezone)
@@ -340,6 +453,10 @@ class Recall:
         def clock(at):
             return datetime.fromisoformat(at).astimezone(tz).strftime("%Y-%m-%d %H:%M")
 
+        def line(x, n):
+            return f"[{clock(x['at'])} {x['name'] or '群成员'}] {x['text'][:n]}"
+
+        query = with_digits(query)
         rows = (
             self.store.search(
                 key,
@@ -353,14 +470,49 @@ class Recall:
             if messages
             else []
         )
-        found = []
-        for r in rows[:6]:
-            around = self.store.rows(
-                """SELECT * FROM messages WHERE group_key=? AND erased=0 AND kind!='recall'
-                AND seq BETWEEN ? AND ? AND uid NOT IN (?,?) AND at<=? ORDER BY seq""",
-                (key, r["seq"] - 2, r["seq"] + 2, r["uid"], m["uid"], m["at"]),
+        # Questions to the bot are not evidence; keep them after real messages
+        # (2026-10-09: three of six hits for "飞度散热器谁装的" were earlier questions).
+        rows.sort(key=lambda r: r.get("route") == "dialogue")
+        shown = rows[:6]
+        cache = {}
+        # People call the same car "白色凯美瑞" in one message and "D3K71" in the
+        # next. A code in a hit that shares a rare word with the question stands for
+        # the same thing, so search again with it (2026-10-09 test: "飞度散热器谁装的"
+        # missed "3H6T9 散热器装好了"). Common words such as 原厂 or 报价 do not count.
+        asked = terms(query)
+        rare = self._rare(key, asked, cache)
+        tally = Counter()
+        for r in shown:
+            if r.get("route") != "dialogue" and terms(r["text"]) & rare.keys():
+                tally.update(codes(r["text"]) - asked)
+        aliases = [c for c, _ in tally.most_common(2)]
+        if aliases:
+            seen = {r["uid"] for r in shown}
+            more = self.store.search(
+                key, " ".join(aliases) + " " + query, before, 8,
+                exclude_uid=m["uid"], since=since, senders=senders,
             )
-            s["sources"].update({x["uid"]: x for x in [r, *around]})
+            shown += [r for r in more if r["uid"] not in seen and codes(r["text"]) & set(aliases)][:4]
+            notes.append(
+                "记录里同一辆车也用编号 " + "、".join(a.upper() for a in aliases) + " 指代，已按编号补查"
+            )
+        hits = {r["uid"] for r in shown}
+        found = []
+        for r in shown:
+            around = (
+                self.store.rows(
+                    """SELECT * FROM messages WHERE group_key=? AND erased=0 AND kind!='recall'
+                    AND seq BETWEEN ? AND ? AND uid NOT IN (?,?) AND at<=? ORDER BY seq""",
+                    (key, r["seq"] - NEIGHBOURS, r["seq"] + NEIGHBOURS, r["uid"], m["uid"], m["at"]),
+                )
+                if NEIGHBOURS
+                else []
+            )
+            answered, after = self._exchange(
+                key, r, m, cache, hits | {x["uid"] for x in around}
+            )
+            later = [x for x, _ in after]
+            s["sources"].update({x["uid"]: x for x in [r, *around, *later] + ([answered] if answered else [])})
             s["used_sources"].add(r["uid"])
             found.append(
                 {
@@ -369,10 +521,9 @@ class Recall:
                     "at": clock(r["at"]),
                     "name": r["name"] or "群成员",
                     "text": r["text"][:400],
-                    "context": [
-                        f"[{clock(x['at'])} {x['name'] or '群成员'}] {x['text'][:120]}"
-                        for x in around
-                    ],
+                    **({"context": [line(x, 120) for x in around]} if around else {}),
+                    **({"answers": line(answered, 200)} if answered else {}),
+                    **({"followups": [f"{line(x, 200)}（{why}）" for x, why in after]} if after else {}),
                 }
             )
         episodes = [

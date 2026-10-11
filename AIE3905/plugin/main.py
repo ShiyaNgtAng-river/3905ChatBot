@@ -405,7 +405,8 @@ class GroupSecretary(Star):
     async def search_group_history(
         self, event: AstrMessageEvent, query: str = "", who: str = "", when: str = ""
     ):
-        """在本群保存的聊天记录里查以前的原话，附前后文和相关话题摘要。适合“之前谁说过”“上周怎么定的”；原话不代表最终决定。三个参数至少填一个。
+        """在本群保存的聊天记录里查以前的原话，附相关话题摘要。适合“之前谁说过”“上周怎么定的”；原话不代表最终决定。三个参数至少填一个。
+        每条结果可能带 answers（这条在接谁的话）和 followups（之后的消息，括号里写了来由：引用了这条、对方之后的话、提到同一编号）。答复里不一定重复关键词，下结论前先看；标“未必在回这条”的只能当线索。
 
         Args:
             query(string): 关键词，多个词用空格分开

@@ -317,6 +317,21 @@ class Store:
             r["provenance"] = json.loads(r.get("provenance") or "{}")
         return rows
 
+    def frequency(self, group, token):
+        """How many of the group's messages contain this search token."""
+        if self.fts:
+            row = self.one(
+                """SELECT COUNT(*) AS n FROM message_fts JOIN messages m ON m.uid=message_fts.uid
+                WHERE message_fts MATCH ? AND m.group_key=? AND m.erased=0""",
+                ('"' + token.replace('"', '""') + '"', group),
+            )
+        else:
+            row = self.one(
+                "SELECT COUNT(*) AS n FROM messages WHERE group_key=? AND erased=0 AND instr(lower(text),?)>0",
+                (group, token),
+            )
+        return row["n"]
+
     def search(
         self,
         group,

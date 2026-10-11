@@ -594,3 +594,18 @@ class GateTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AttributionRuleTests(unittest.TestCase):
+    """2026-10-09/10 tests: a short line naming nothing was pinned on the wrong person or
+    order; the opposite overcorrection left a clear line unanswered ("待确认")."""
+
+    def test_rules_cover_short_lines_and_keep_clear_ones(self):
+        from secretary.dialogue import NATIVE_GUIDE
+        from secretary.reading import REREAD_TASK
+
+        self.assertIn("说话人以每行开头的昵称为准", REREAD_TASK)
+        for text in (REREAD_TASK, NATIVE_GUIDE):
+            self.assertIn("没说对象的短句", text)
+            self.assertIn("说清了对象的消息", text)
+        REREAD_TASK.format(question="谁装的")  # the added text has no stray braces
