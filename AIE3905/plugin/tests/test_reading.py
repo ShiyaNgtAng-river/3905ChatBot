@@ -280,16 +280,68 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         empty = json.loads(await self.e.conversation.native_tool_async(st, "read_day", {"when": "09-24", "question": "几点"}))
         self.assertIn("本群记录覆盖 2026-10-05 至 2026-10-06", empty["answer"])
 
-    async def test_questions_to_the_bot_are_marked_not_evidence(self):
+    async def test_questions_to_the_bot_stay_out_of_memory_and_come_with_its_reply(self):
         await self.say("lin", "小林", "周六去爬山吧", at(5, 9))
         st = self.state("听说爬山改到周日了？", sender="yu", when=at(5, 10))
-        await self.say("owner", "老张", "没改", at(5, 11))
-        text, _ = self.r.transcript("demo", "2026-10-05", self.r.rows("demo", "2026-10-05"))
-        self.assertIn("老张 @助手] 听说爬山改到周日了？", text)
+        asked = f"ask{self.n}"
+        self.e.conversation.native_finish(st, "没改，还是周六")
+        await self.say("owner", "老张", "没改", at(5, 11), reply_to=asked)
+        rows = self.r.rows("demo", "2026-10-05")
+        text, seqs = self.r.transcript("demo", "2026-10-05", rows)
+        self.assertNotIn("听说爬山改到周日了", text)
+        self.assertIn("没改 ↩问助手的消息", text)
+        self.assertEqual(len(seqs), 2)
+        # Only the portrait, which learns from reactions to the bot, sees the exchange.
+        portrait, _ = self.r.transcript("demo", "2026-10-05", rows, with_bot=True)
+        self.assertIn("老张 @助手] 听说爬山改到周日了？", portrait)
         later = self.state("爬山", when=at(5, 12))
         found = self.e.recall.search(later, query="改到周日")["messages"]
-        self.assertTrue(any(x.get("asked_bot") for x in found))
-        self.assertIsNotNone(st)
+        hit = next(x for x in found if x.get("asked_bot"))
+        self.assertTrue(hit["bot_reply"].endswith("助手] 没改，还是周六"))
+        # Replies stored before the link are matched by asker, text and time.
+        old = self.state("那几点集合？", sender="owner", when=at(5, 10, 30))
+        with self.e.store.tx() as db:
+            db.execute(
+                "INSERT INTO answers(id,group_key,actor,at,question,output,sources,item_ids,mode,trace) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                ("old", "demo", "owner", at(5, 10, 31).astimezone(timezone.utc).isoformat(),
+                 old["m"]["text"], "早上八点东门", "[]", "[]", "native", "{}"),
+            )
+        self.assertEqual(self.e.store.answer_to("demo", old["m"])["output"], "早上八点东门")
+        self.assertIsNone(self.e.store.answer_to("demo", dict(old["m"], sender="lin")))
+
+    async def test_reading_keeps_questions_to_the_bot_for_feedback_only(self):
+        plan = await self.say("lin", "小林", "周六去爬山吧", at(5, 9))
+        ask = self.state("你上次说错了，别瞎编", sender="yu", when=at(5, 9, 30))["m"]["seq"]
+        provider = self.model(
+            {
+                "topics": [{"id": "t1", "title": "爬山", "points": [
+                    {"text": "小林提议周六爬山", "m": [plan]},
+                    {"text": "小余问助手，未见回答", "m": [ask]},
+                ]}],
+                "feedback": [{"text": "小余说助手上次说错了", "m": [ask]}],
+            }
+        )
+        await self.r.read_pass("demo", "2026-10-05", at(5, 10))
+        head, tail = provider.calls[0][1].split("</聊天记录>")
+        self.assertNotIn("别瞎编", head)  # after the transcript, so its prefix stays shared
+        self.assertIn(f"[m{ask} 09:30 老张] 你上次说错了，别瞎编", tail)
+        view = json.loads(self.e.store.one("SELECT sidebar FROM day_views")["sidebar"])
+        self.assertEqual(view["topics"][0]["points"], [{"text": "小林提议周六爬山", "m": [plan]}])
+        self.assertEqual(view["feedback"], [{"text": "小余说助手上次说错了", "m": [ask]}])
+        # Nightly memory sees neither the question nor the feedback quoting it.
+        provider = self.model(
+            {
+                "qa": [{"q": 4, "answer": "小余问助手没人回", "m": [ask]}],
+                "ops": [
+                    {"op": "topic", "ref": "new1", "title": "爬山", "m": [plan]},
+                    {"op": "record", "topic": "new1", "text": "10-05 09:30 小余问助手，未见回答", "m": [ask]},
+                ],
+            }
+        )
+        await self.r.consolidate_day("demo", "2026-10-05", at(6, 5))
+        self.assertNotIn("说错了", provider.calls[0][1])
+        self.assertEqual(self.e.store.rows("SELECT 1 FROM anchor_facts"), [])
+        self.assertEqual(json.loads(self.e.store.one("SELECT qa FROM digests")["qa"]), [])
 
     async def test_removed_evidence_takes_derived_memory_with_it(self):
         s = await self.first_day()
@@ -491,11 +543,27 @@ class ReadingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(note["sources"]), [react])
         self.assertEqual(len(self.e.store.rows("SELECT 1 FROM lessons")), 2)
         self.assertEqual({a["id"] for a in self.e.store.rows("SELECT id FROM answers")}, {"a1", "a2"})
-        # A recall is not routine: everything derived from the message goes.
+        # A recall is not routine: everything derived from the message goes, and so does
+        # every reply made after it (a2); the reply before it (a1) could not have seen it.
         self.e.store.recall("demo", f"n{self.n}")
         self.assertIsNone(self.e.store.one("SELECT 1 FROM profiles WHERE sender='owner'"))
         self.assertEqual(self.e.store.rows("SELECT 1 FROM lessons"), [])
-        self.assertEqual(self.e.store.rows("SELECT 1 FROM answers"), [])
+        self.assertEqual([a["id"] for a in self.e.store.rows("SELECT id FROM answers")], ["a1"])
+
+    async def test_a_recall_keeps_replies_made_before_the_message(self):
+        await self.say("lin", "小林", "周六去爬山吧", at(5, 9))
+        self.answer("before", at(5, 9, 30), "周六爬山")
+        await self.say("yu", "小余", "我周日不在家", at(5, 10))
+        self.answer("after", at(5, 10, 5), "记下了，周日不在家")
+        with self.e.store.tx() as db:
+            for aid, when in (("before", at(5, 9, 31)), ("after", at(5, 10, 6))):
+                db.execute(
+                    "INSERT INTO feedback(group_key,actor,answer_id,kind,note,at) VALUES(?,?,?,?,?,?)",
+                    ("demo", "owner", aid, "good", "", when.astimezone(timezone.utc).isoformat()),
+                )
+        self.e.store.recall("demo", "n2")
+        self.assertEqual([a["id"] for a in self.e.store.rows("SELECT id FROM answers")], ["before"])
+        self.assertEqual([f["answer_id"] for f in self.e.store.rows("SELECT answer_id FROM feedback")], ["before"])
 
     async def test_opting_out_removes_lessons_about_the_person(self):
         s, _, _ = await self.distilled_day()

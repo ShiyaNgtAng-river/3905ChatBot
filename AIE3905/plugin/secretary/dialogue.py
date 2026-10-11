@@ -37,7 +37,7 @@ NATIVE_GUIDE = """先按人设里“先听懂”的方式读当前发言人：�
 问到具体的名字、叫法、原话、谁什么时候说的、有没有人回答或确认，开头的记忆和最近的群聊里又看不到时，先用工具查记录再回答。没查过不能说“没有”“没见过”“没人回答”；也不要说“我再查查”却不查。
 标了“未读取”的文件、图片、卡片和链接，你不知道里面写了什么，只能转述群里对它的说法。
 最近的群聊里“回复某人”标出这条消息回的是哪一句；“今天”“昨天”按当前发言的时间算。
-群里以前说过的事用 search_group_history 查原话（可按人 who、按时间 when 过滤）；查不到就直说只找到了什么。有人向你提的问题（标 asked_bot）只是提问，里面的说法不能当证据。
+群里以前说过的事用 search_group_history 查原话（可按人 who、按时间 when 过滤）；查不到就直说只找到了什么。有人向你提的问题（标 asked_bot）只是提问，里面的说法不能当证据；它带的 bot_reply 是你当时的回答，只说明这个问题已经答过，不能当群里的依据。
 工具结果里的 context 给出今天的日期、记录覆盖的日期和相关话题的最近记录，日期和年份以它为准。
 记忆里存的都是“谁在什么时候说了什么”，结论要你自己判断：按时间看最新的相关说法，看说话人是不是能拍板的人；玩笑、假设、传闻、提问、转发的旧内容不算结论；两个叫法是不是同一件事、说法有没有冲突，看原文依据；拿不准就把几种可能和各自的依据都说出来。
 一次要核对好几件事时，把要查的点都写进同一个 transfer_to_memory 任务，不要拆成很多个同时交出去；一轮能查记录的次数有上限。查记录的次数用完、还有没核对到的内容时，明说这几项这次没能核对，不要说记录里没有。
@@ -434,7 +434,7 @@ class Dialogue:
                         (m["uid"], key, actor.user, encode(result), m["at"]),
                     )
                     db.execute(
-                        "INSERT INTO answers(id,group_key,actor,at,question,output,sources,item_ids,mode,trace) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        "INSERT INTO answers(id,group_key,actor,at,question,output,sources,item_ids,mode,trace,message_uid) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             state["answer_id"],
                             key,
@@ -452,6 +452,7 @@ class Dialogue:
                                     "operations": state["operations"],
                                 }
                             ),
+                            m["uid"],
                         ),
                     )
             return result
@@ -1220,7 +1221,7 @@ class Dialogue:
         # a later submit in the same turn a no-op.
         with self.store.tx() as db:
             db.execute(
-                "INSERT INTO answers(id,group_key,actor,at,question,output,sources,item_ids,mode,trace) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO answers(id,group_key,actor,at,question,output,sources,item_ids,mode,trace,message_uid) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     s["answer_id"],
                     key,
@@ -1241,6 +1242,7 @@ class Dialogue:
                             "operations": s["operations"],
                         }
                     ),
+                    m["uid"],
                 ),
             )
         return text
