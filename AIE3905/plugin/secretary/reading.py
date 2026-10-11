@@ -76,9 +76,18 @@ CONSOLIDATE_TASK = """
 问题清单：
 {questions}"""
 
+LINK_TASK = """
+任务：标出回复关系。从 m{first} 起往后，找出明确在接前面某一条的话：回答提问、报价之后说要或不要、答应或拒绝、对某个请求说收到。末尾已经有“↩”的不用标。
+输出 JSON：{{"links":[{{"m":这条的编号,"to":它接的那条的编号}}]}}
+规则：
+1. 宁缺毋滥：只标从前后文能确定的。看不出在接哪条就不标，不要为了标而找一条最像的。
+2. 群里常有几件事同时在聊，也有很多和工作无关的闲聊。没说对象的短句（“好的”“要这个”“先不用了”“已送达”“收到”）只有前面刚好有一条明确对他说的话、又没有别的事同时在谈时才标；同一个人同时有两件事在谈、分不清是哪件时不标。
+3. 闲聊、感叹、自言自语、开启新话题的消息不标；不连到图片、语音、表情上。
+4. to 必须是记录里更早的一条；最多 {most} 条。"""
+
 REREAD_TASK = """
 任务：只根据这一天的记录回答下面的问题；找不到就说没找到，不要猜。
-说话人以每行开头的昵称为准，转述时写清是谁说的，不要把一句话安到别人头上。群里常有几件事同时在聊：“收到”“好的”“要原厂的”这类没说对象的短句，只有从前后能确定是谁在回哪条时才写进回答，拿不准就不写；说清了对象的消息照常引用。
+说话人以每行开头的昵称为准，转述时写清是谁说的，不要把一句话安到别人头上；原话里的“我们”“你们”按说话人换成具体的一方。群里常有几件事同时在聊：“收到”“好的”“要原厂的”这类没说对象的短句，只有从前后能确定是谁在回哪条时才写进回答，拿不准就不写；说清了对象的消息照常引用。
 问题：{question}
 输出 JSON：{{"answer":"300字以内","m":[依据的消息编号，最多5个]}}"""
 
@@ -523,7 +532,65 @@ class Reader:
                     now.astimezone(timezone.utc).isoformat(),
                 ),
             )
+        if cfg.link_replies:
+            try:
+                await self.link_pass(key, day, text, seqs, rows, revision)
+            except Exception as exc:
+                # The view is saved; links catch up on the next pass.
+                self.store.log_usage(key, "linking_failure", "runtime", {}, 0, type(exc).__name__)
         return day
+
+    async def link_pass(self, key, day, text, seqs, rows, revision):
+        """Mark which earlier message each new reply answers, judged from the whole day.
+
+        Keyword guesses pinned short replies ("要原厂的") on the wrong order about half
+        the time (2026-10-10 offline check); the reader sees who talks to whom in
+        order. Runs on the reading pass's transcript, so the cached prefix is shared.
+        Covers messages after the previous link pass; a platform quote is kept as is.
+
+        Returns:
+            Number of links written, or None when a message was removed meanwhile.
+        """
+        mark = f"linked:{key}:{day}"
+        done = int(self.store.get_meta(mark) or 0)
+        new = sorted(n for n in seqs if n > done)
+        if not new:
+            return 0
+        obj = await self.ask(
+            self.reading,
+            self.system,
+            text + LINK_TASK.format(first=new[0], most=min(200, len(new))),
+            "linking",
+            key,
+            timeout=self.e.config.long_timeout,
+            max_tokens=4000,
+        )
+        if self.changed(key, revision, rows):
+            return None
+        quoted = {r["seq"] for r in rows if r["reply_to"]}
+        # A reply to or from a picture, a voice note or an emoji says nothing about who
+        # answers what (first replay: "好的好的" linked to a voice note).
+        bare = {
+            r["seq"] for r in rows
+            if noise((r["text"] or "").strip()) or (r["text"] or "").strip() in {"[图片]", "[语音]", "[表情]", "[非文字消息]"}
+        }
+        links = {}
+        for x in obj.get("links") if isinstance(obj.get("links"), list) else []:
+            if not isinstance(x, dict):
+                continue
+            m, to = self.refs([x.get("m")], seqs), self.refs([x.get("to")], seqs)
+            if (
+                m and to and done < m[0] and to[0] < m[0]
+                and m[0] not in quoted and not {m[0], to[0]} & bare
+            ):
+                links[m[0]] = to[0]
+        with self.store.tx() as db:
+            db.executemany(
+                "INSERT OR REPLACE INTO links(group_key,seq,target,day) VALUES(?,?,?,?)",
+                [(key, m, to, day) for m, to in links.items()],
+            )
+            db.execute("INSERT OR REPLACE INTO metadata VALUES(?,?)", (mark, str(new[-1])))
+        return len(links)
 
     @staticmethod
     async def ask(provider, system, payload, role, key, **kw):
