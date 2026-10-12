@@ -1,0 +1,6 @@
+name: astrbot_plugin_groupmedia
+display_name: 群聊多模态适配
+desc: 独立接入本地 OCR、离线语音转写和可选云端视觉、生图服务
+version: v0.1.0
+author: AIE3905 Project Team
+astrbot_version: '>=4.28.1'

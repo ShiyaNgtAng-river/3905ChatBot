@@ -1,0 +1,6 @@
+{
+  "ocr": {"backend": "apple_vision"},
+  "describe": {"backend": "vision_chat", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model": "qwen-vl-plus", "api_key_env": "GROUPMEDIA_VISION_KEY"},
+  "transcribe": {"backend": "audio_transcriptions", "base_url": "https://api.siliconflow.cn/v1", "model": "FunAudioLLM/SenseVoiceSmall", "api_key_env": "GROUPMEDIA_ASR_KEY"},
+  "generate": {"backend": "dashscope_image", "base_url": "https://dashscope.aliyuncs.com", "model": "qwen-image-plus", "api_key_env": "GROUPMEDIA_IMAGE_KEY", "size": "1024*1024"}
+}
